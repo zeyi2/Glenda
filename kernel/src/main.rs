@@ -3,7 +3,6 @@
 
 mod dtb;
 mod init;
-mod lock;
 mod logo;
 mod mem;
 mod printk;
