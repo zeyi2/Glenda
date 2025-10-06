@@ -62,6 +62,20 @@ enum Cmd {
         #[arg(long, default_value = "nographic")]
         display: String,
     },
+    /// Start QEMU paused and wait for LLDB
+    Lldb {
+        /// Number of virtual CPUs to pass to QEMU
+        #[arg(long, default_value_t = 4)]
+        cpus: u32,
+
+        /// Memory for QEMU (e.g. 128M, 1G)
+        #[arg(long, default_value = "128M")]
+        mem: String,
+
+        /// Display device for QEMU. Use "nographic" for serial-only, or a display backend (e.g. "gtk", "sdl", "none").
+        #[arg(long, default_value = "nographic")]
+        display: String,
+    },
     /// Disassemble the kernel ELF
     Objdump,
     /// Show section sizes
@@ -81,6 +95,10 @@ fn main() -> anyhow::Result<()> {
         Cmd::Gdb { cpus, mem, display } => {
             build(mode, &xtask.features)?;
             qemu_gdb(mode, cpus, &mem, &display)?;
+        }
+        Cmd::Lldb { cpus, mem, display } => {
+            build(mode, &xtask.features)?;
+            qemu_lldb(mode, cpus, &mem, &display)?;
         }
         Cmd::Test { cpus, mem, display } => {
             build(mode, &Vec::from([String::from("tests")]))?;
@@ -170,6 +188,38 @@ fn qemu_gdb(mode: &str, cpus: u32, mem: &str, display: &str) -> anyhow::Result<(
         eprintln!("  gdb -ex 'set architecture riscv:rv64' -ex 'target remote :1234' -ex 'symbol-file {}'", elf.display());
     } else {
         eprintln!("[ ERROR ] install gdb or riscv64-unknown-elf-gdb first");
+    }
+    run(&mut cmd)
+}
+
+fn qemu_lldb(mode: &str, cpus: u32, mem: &str, display: &str) -> anyhow::Result<()> {
+    let elf = elf_path(mode);
+    if !elf.exists() {
+        return Err(anyhow::anyhow!("[ ERROR ] ELF not found: {}", elf.display()));
+    }
+    let qemu = qemu_cmd()?;
+    let mut cmd = Command::new(&qemu);
+    cmd.arg("-machine").arg("virt");
+    // CPUs
+    if cpus > 1 {
+        cmd.arg("-smp").arg(cpus.to_string());
+    }
+    // Memory
+    cmd.arg("-m").arg(mem);
+    // Display handling
+    if display == "nographic" {
+        cmd.arg("-nographic");
+    } else if display == "none" {
+        cmd.arg("-display").arg("none");
+    } else {
+        cmd.arg("-display").arg(display);
+    }
+    cmd.arg("-bios").arg("default").arg("-S").arg("-s").arg("-kernel").arg(elf.to_str().unwrap());
+    eprintln!("QEMU started. In another shell:");
+    if which("lldb").is_ok() || which("llvm-lldb").is_ok() {
+        eprintln!("  lldb --arch riscv64 -s -o \"platform select remote-gdb-server\" -o \"process connect connect://localhost:1234\" {}", elf.display());
+    } else {
+        eprintln!("[ ERROR ] install lldb or llvm-lldb first");
     }
     run(&mut cmd)
 }
