@@ -177,11 +177,11 @@ pub fn initialize_regions() {
 
     if kernel_end.as_usize() >= mem_end.as_usize() {
         printk!(
-            "{}PMEM init failed{}: kernel end {:#x} beyond memory end {:#x}",
+            "{}PMEM: Failed to init memory: kernel end {:#x} beyond memory end {:#x}{}",
             ANSI_RED,
-            ANSI_RESET,
             kernel_end.as_usize(),
-            mem_end.as_usize()
+            mem_end.as_usize(),
+            ANSI_RESET
         );
         panic!("pmem_init: kernel overlaps physical memory end");
     }
@@ -207,9 +207,7 @@ pub fn initialize_regions() {
     let u = USER_REGION.region_info();
 
     printk!(
-        "{}PMEM initialized{}: kernel [{:#x}, {:#x}) -> {} pages, user [{:#x}, {:#x}) -> {} pages",
-        ANSI_BLUE,
-        ANSI_RESET,
+        "PMEM: Initialized kernel [{:#x}, {:#x}) -> {} pages, user [{:#x}, {:#x}) -> {} pages",
         k.begin.as_usize(),
         k.end.as_usize(),
         k.allocable,
