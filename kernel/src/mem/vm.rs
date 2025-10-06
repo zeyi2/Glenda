@@ -144,7 +144,7 @@ pub fn init_kernel_page_table() {
 }
 
 // 切换到内核页表
-pub fn switch_to_kernel_page_table() {
+pub fn switch_to_kernel_page_table(hartid: usize) {
     let kpt = KERNEL_PAGE_TABLE.lock();
     let root_pa = kpt.expect("kernel page table not initialized");
     let satp = SATP_MODE | root_pa.ppn();
@@ -152,5 +152,5 @@ pub fn switch_to_kernel_page_table() {
         asm!("csrw satp, {}", in(reg) satp);
         asm!("sfence.vma zero, zero");
     }
-    printk!("VM: Switched to kernel page table (SATP={:#x})", satp);
+    printk!("VM: Switched to kernel page table (SATP={:#x}) on hart {}", satp, hartid);
 }
