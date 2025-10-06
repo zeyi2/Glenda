@@ -49,10 +49,14 @@ unsafe impl Sync for HartSlotTable {}
 static PAGE_SLOTS: HartSlotTable = HartSlotTable::new();
 
 pub fn run(hartid: usize) {
-    init::init_pmem();
+    if hartid == 0 {
+        printk!("{}[TEST]{} PMEM: Starting physical memory tests", ANSI_YELLOW, ANSI_RESET);
+    }
+
     kernel_concurrent_alloc_test(hartid);
     if hartid == 0 {
         user_region_validation();
+        printk!("{}[PASS]{} PMEM: All tests passed", ANSI_GREEN, ANSI_RESET);
     }
 }
 
@@ -77,18 +81,14 @@ fn kernel_concurrent_alloc_test(hartid: usize) {
     let active = ACTIVE_PARTICIPANTS.load(Acquire);
     if active == 0 {
         if hartid == 0 {
-            printk!(
-                "{}[WARN]{} pmem_kernel_concurrent: kernel region empty",
-                ANSI_YELLOW,
-                ANSI_RESET
-            );
+            printk!("{}[WARN]{} PMEM: kernel region empty", ANSI_YELLOW, ANSI_RESET);
         }
         return;
     }
 
     if hartid >= active {
         printk!(
-            "{}[INFO]{} pmem_kernel_concurrent: hart {} idle ({} active)",
+            "{}[INFO]{} PMEM: hart {} idle ({} active)",
             ANSI_YELLOW,
             ANSI_RESET,
             hartid,
@@ -138,14 +138,14 @@ fn kernel_concurrent_alloc_test(hartid: usize) {
         let expected = TOTAL_PAGES.load(Acquire);
         if final_info.allocable == expected {
             printk!(
-                "{}[PASS]{} pmem_kernel_concurrent: {} pages restored",
+                "{}[PASS]{} PMEM: kernel concurrent test - {} pages restored",
                 ANSI_GREEN,
                 ANSI_RESET,
                 expected
             );
         } else {
             printk!(
-                "{}[FAIL]{} pmem_kernel_concurrent: allocable {} expected {}",
+                "{}[FAIL]{} PMEM: kernel concurrent test - allocable {} expected {}",
                 ANSI_RED,
                 ANSI_RESET,
                 final_info.allocable,
@@ -197,13 +197,13 @@ fn user_region_validation() {
 
     if pass && zero_verified && exhaustion_detected {
         printk!(
-            "{}[PASS]{} pmem_user_region: allocation/free/zero validated",
+            "{}[PASS]{} PMEM: user region test - allocation/free/zero validated",
             ANSI_GREEN,
             ANSI_RESET
         );
     } else {
         printk!(
-            "{}[FAIL]{} pmem_user_region: alloc {}, zero {}, exhaustion {}",
+            "{}[FAIL]{} PMEM: user region test - alloc {}, zero {}, exhaustion {}",
             ANSI_RED,
             ANSI_RESET,
             pass,

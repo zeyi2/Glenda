@@ -2,14 +2,19 @@ use crate::printk;
 use crate::printk::{
     ANSI_BLUE, ANSI_CYAN, ANSI_GREEN, ANSI_MAGENTA, ANSI_RED, ANSI_RESET, ANSI_WHITE, ANSI_YELLOW,
 };
+
 pub fn run() {
+    printk!("{}[TEST]{} PRINTK: Starting printk tests", ANSI_YELLOW, ANSI_RESET);
+
     printk_test();
-    printk!("{}[PASS]{} Printk test", ANSI_GREEN, ANSI_RESET);
+
+    printk!("{}[PASS]{} PRINTK: All tests passed", ANSI_GREEN, ANSI_RESET);
 }
+
 fn printk_test() {
-    printk!("{}printk test start{}", ANSI_BLUE, ANSI_RESET);
+    printk!("{}[INFO]{} PRINTK: Testing color output", ANSI_YELLOW, ANSI_RESET);
     printk!(
-        "{}Red{} {}Green{} {}Yellow{} {}Blue{} {}Magenta{} {}Cyan{} {}White{}",
+        "  {}Red{} {}Green{} {}Yellow{} {}Blue{} {}Magenta{} {}Cyan{} {}White{}",
         ANSI_RED,
         ANSI_RESET,
         ANSI_GREEN,

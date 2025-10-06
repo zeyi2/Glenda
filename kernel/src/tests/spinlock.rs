@@ -23,10 +23,10 @@ fn spinlock_test(hartid: usize, harts_under_test: usize) -> usize {
     let ready = PARTICIPANTS.fetch_add(1, Ordering::SeqCst) + 1;
     if ready == harts_under_test {
         printk!(
-            "{}All {} harts ready. Starting spinlock test{}",
-            ANSI_BLUE,
-            harts_under_test,
-            ANSI_RESET
+            "{}[INFO]{} SPINLOCK: All {} harts ready, starting test",
+            ANSI_YELLOW,
+            ANSI_RESET,
+            harts_under_test
         );
         START_TEST.store(true, Ordering::SeqCst);
     } else {
@@ -52,11 +52,15 @@ fn spinlock_test(hartid: usize, harts_under_test: usize) -> usize {
 }
 
 pub fn run(hartid: usize) {
+    if hartid == 0 {
+        printk!("{}[TEST]{} SPINLOCK: Starting spinlock tests", ANSI_YELLOW, ANSI_RESET);
+    }
+
     let harts_under_test = dtb::hart_count();
     let result = spinlock_test(hartid, harts_under_test);
     if result == 0 {
         printk!(
-            "{}hart {} idle{} (not part of spinlock test)",
+            "{}[INFO]{} SPINLOCK: hart {} idle (not part of test)",
             ANSI_YELLOW,
             hartid,
             ANSI_RESET
@@ -68,15 +72,11 @@ pub fn run(hartid: usize) {
         let expected = harts_under_test * INCREMENTS_PER_HART;
         let final_value = GLOBAL_COUNTER.load(Ordering::SeqCst);
         if final_value == expected {
-            printk!(
-                "{}[PASS]{} Spinlock test: counter reached {}",
-                ANSI_GREEN,
-                ANSI_RESET,
-                final_value
-            );
+            printk!("{}[PASS]{} SPINLOCK: counter reached {}", ANSI_GREEN, ANSI_RESET, final_value);
+            printk!("{}[PASS]{} SPINLOCK: All tests passed", ANSI_GREEN, ANSI_RESET);
         } else {
             printk!(
-                "{}[FAIL]{} Spinlock test: counter {} (expected {})",
+                "{}[FAIL]{} SPINLOCK: counter {} (expected {})",
                 ANSI_RED,
                 ANSI_RESET,
                 final_value,
