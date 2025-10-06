@@ -2,14 +2,14 @@
 
 use core::cell::OnceCell;
 use core::cmp;
-use core::ptr::{self, addr_of_mut, NonNull};
+use core::ptr::{self, NonNull, addr_of_mut};
 
 use spin::Mutex;
 
 use crate::dtb;
+use crate::mem::addr::PhysAddr;
 use crate::printk;
 use crate::printk::{ANSI_BLUE, ANSI_RED, ANSI_RESET};
-use crate::utils::align::{align_down, align_up};
 
 pub const PGSIZE: usize = 4096;
 
@@ -30,8 +30,8 @@ struct RegionInner {
 
 #[derive(Debug, Clone, Copy)]
 struct RegionBounds {
-    begin: usize,
-    end: usize,
+    begin: PhysAddr,
+    end: PhysAddr,
 }
 
 struct AllocRegion {
@@ -49,15 +49,16 @@ impl AllocRegion {
         }
     }
 
-    unsafe fn init(&self, begin: usize, end: usize) {
-        let begin_aligned = align_up(begin, PGSIZE);
-        let end_aligned = align_down(end, PGSIZE);
+    unsafe fn init(&self, begin: PhysAddr, end: PhysAddr) {
+        let begin_aligned = begin.align_up();
+        let end_aligned = end.align_down();
 
         let mut head: Option<NonNull<FreePage>> = None;
         let mut count = 0usize;
-        let mut current = begin_aligned;
+        let mut current = begin_aligned.as_usize();
+        let end_val = end_aligned.as_usize();
 
-        while current + PGSIZE <= end_aligned {
+        while current + PGSIZE <= end_val {
             let page = current as *mut FreePage;
             unsafe {
                 (*page).next = head;
@@ -80,7 +81,7 @@ impl AllocRegion {
         RegionInfo { begin: b.begin, end: b.end, allocable }
     }
 
-    fn allocate(&self) -> Option<*mut u8> {
+    fn allocate(&self) -> Option<PhysAddr> {
         let head_ptr = {
             let mut inner = self.inner.lock();
             let head = inner.head?;
@@ -90,21 +91,27 @@ impl AllocRegion {
             head
         };
 
-        let p = head_ptr.as_ptr() as *mut u8;
-        unsafe { ptr::write_bytes(p, 0, PGSIZE) };
-        Some(p)
+        let p = head_ptr.as_ptr() as usize;
+        unsafe { ptr::write_bytes(p as *mut u8, 0, PGSIZE) };
+        Some(PhysAddr::new(p))
     }
 
-    fn free(&self, addr: usize) {
+    fn free(&self, addr: PhysAddr) {
         let b = *self.bounds.get().expect("region not initialized");
-        if addr < b.begin || addr >= b.end || addr % PGSIZE != 0 {
-            panic!("pmem_free: address {:#x} out of bounds [{:#x}, {:#x}]", addr, b.begin, b.end);
+        let pa = addr;
+        if pa < b.begin || pa >= b.end || pa.page_offset() != 0 {
+            panic!(
+                "pmem_free: address {:#x} out of bounds [{:#x}, {:#x}]",
+                pa.as_usize(),
+                b.begin.as_usize(),
+                b.end.as_usize()
+            );
         }
 
         let mut inner = self.inner.lock();
         unsafe {
-            ptr::write_bytes(addr as *mut u8, 0, PGSIZE);
-            let page = addr as *mut FreePage;
+            ptr::write_bytes(pa.as_usize() as *mut u8, 0, PGSIZE);
+            let page = pa.as_usize() as *mut FreePage;
             (*page).next = inner.head;
             inner.head = NonNull::new(page);
         }
@@ -117,14 +124,14 @@ static USER_REGION: AllocRegion = AllocRegion::new();
 
 #[derive(Clone, Copy, Debug)]
 pub struct RegionInfo {
-    pub begin: usize,
-    pub end: usize,
+    pub begin: PhysAddr,
+    pub end: PhysAddr,
     pub allocable: usize,
 }
 
-pub fn pmem_alloc(for_kernel: bool) -> *mut u8 {
+pub fn pmem_alloc(for_kernel: bool) -> PhysAddr {
     match allocate_page(for_kernel) {
-        Some(ptr) => ptr,
+        Some(pa) => pa,
         None => {
             if for_kernel {
                 panic!("pmem_alloc: kernel region exhausted");
@@ -136,11 +143,11 @@ pub fn pmem_alloc(for_kernel: bool) -> *mut u8 {
 }
 
 #[cfg(feature = "tests")]
-pub fn pmem_try_alloc(for_kernel: bool) -> Option<*mut u8> {
+pub fn pmem_try_alloc(for_kernel: bool) -> Option<PhysAddr> {
     allocate_page(for_kernel)
 }
 
-pub fn pmem_free(addr: usize, for_kernel: bool) {
+pub fn pmem_free(addr: PhysAddr, for_kernel: bool) {
     region(for_kernel).free(addr);
 }
 
@@ -152,42 +159,38 @@ pub fn user_region_info() -> RegionInfo {
     USER_REGION.region_info()
 }
 
-fn allocate_page(for_kernel: bool) -> Option<*mut u8> {
+fn allocate_page(for_kernel: bool) -> Option<PhysAddr> {
     region(for_kernel).allocate()
 }
 
 fn region(for_kernel: bool) -> &'static AllocRegion {
-    if for_kernel {
-        &KERNEL_REGION
-    } else {
-        &USER_REGION
-    }
+    if for_kernel { &KERNEL_REGION } else { &USER_REGION }
 }
 
 pub fn initialize_regions() {
-    let kernel_end = align_up(addr_of_mut!(__bss_end) as usize, PGSIZE);
+    let kernel_end = PhysAddr::new(addr_of_mut!(__bss_end) as usize).align_up();
 
     let mem_range = dtb::memory_range()
         .unwrap_or_else(|| dtb::MemoryRange { start: 0x8000_0000, size: 128 * 1024 * 1024 });
-    let mem_start = mem_range.start;
-    let mem_end = mem_range.start + mem_range.size;
+    let mem_start = PhysAddr::new(mem_range.start);
+    let mem_end = PhysAddr::new(mem_range.start + mem_range.size);
 
-    if kernel_end >= mem_end {
+    if kernel_end.as_usize() >= mem_end.as_usize() {
         printk!(
             "{}PMEM init failed{}: kernel end {:#x} beyond memory end {:#x}",
             ANSI_RED,
             ANSI_RESET,
-            kernel_end,
-            mem_end
+            kernel_end.as_usize(),
+            mem_end.as_usize()
         );
         panic!("pmem_init: kernel overlaps physical memory end");
     }
 
-    let alloc_begin = cmp::max(kernel_end, mem_start);
+    let alloc_begin = PhysAddr::new(cmp::max(kernel_end.as_usize(), mem_start.as_usize()));
     let alloc_end = mem_end;
-    let total_free = alloc_end.saturating_sub(alloc_begin);
+    let total_free = alloc_end.as_usize().saturating_sub(alloc_begin.as_usize());
 
-    let mut kernel_split = align_up(alloc_begin + total_free / 2, PGSIZE);
+    let mut kernel_split = PhysAddr::new(alloc_begin.as_usize() + total_free / 2).align_up();
     if kernel_split > alloc_end {
         kernel_split = alloc_end;
     }
@@ -207,11 +210,11 @@ pub fn initialize_regions() {
         "{}PMEM initialized{}: kernel [{:#x}, {:#x}) -> {} pages, user [{:#x}, {:#x}) -> {} pages",
         ANSI_BLUE,
         ANSI_RESET,
-        k.begin,
-        k.end,
+        k.begin.as_usize(),
+        k.end.as_usize(),
         k.allocable,
-        u.begin,
-        u.end,
+        u.begin.as_usize(),
+        u.end.as_usize(),
         u.allocable
     );
 }
