@@ -109,10 +109,10 @@ fn test_vm_remap_and_unmap() {
 
     // 测试取消映射
     printk!("  Unmapping VA {:#x}", PGSIZE * 10);
-    vm_unmappages(test_pgtbl, VirtAddr(PGSIZE * 10), PGSIZE);
+    vm_unmappages(test_pgtbl, VirtAddr(PGSIZE * 10), PGSIZE, true);
 
     printk!("  Unmapping VA {:#x}", PGSIZE * 512);
-    vm_unmappages(test_pgtbl, VirtAddr(PGSIZE * 512), PGSIZE);
+    vm_unmappages(test_pgtbl, VirtAddr(PGSIZE * 512), PGSIZE, true);
 
     printk!("\n  Page table dump after modifications:");
     vm_print(test_pgtbl, 0, 0);

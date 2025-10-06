@@ -79,7 +79,7 @@ pub fn vm_mappages(
 /// 取消映射虚拟地址区间
 ///
 /// 取消 [va_start, va_start + size) 的映射，并释放对应的物理页。
-pub fn vm_unmappages(root: &mut PageTable, va_start: VirtAddr, size: usize) {
+pub fn vm_unmappages(root: &mut PageTable, va_start: VirtAddr, size: usize, free: bool) {
     let mut va = va_start.as_usize();
     let end = va + size;
 
@@ -88,7 +88,10 @@ pub fn vm_unmappages(root: &mut PageTable, va_start: VirtAddr, size: usize) {
             if pte.is_valid() {
                 // 释放物理页
                 let pa = pte.pa();
-                pmem_free(pa, true);
+                if free {
+                    pmem_free(pa, false);
+                }
+                // 清除 PTE
                 *pte = Pte(0);
             }
         }
