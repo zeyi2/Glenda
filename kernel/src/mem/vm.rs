@@ -21,11 +21,16 @@ pub const SATP_MODE: usize = 8 << 60; // SV39
 static KERNEL_PAGE_TABLE: spin::Mutex<Option<PhysAddr>> = spin::Mutex::new(None);
 
 /// 获取虚拟地址对应的 PTE 指针（多级页表遍历）
+///
+/// 遍历三级页表（Sv39），获取叶子节点的 PTE。
+/// 如果 alloc 为 true，则在遍历过程中自动分配缺失的中间页表。
 pub fn vm_getpte(root: &mut PageTable, va: VirtAddr, alloc: bool) -> Option<&mut Pte> {
     let idx = va.vpn_indices();
     let mut pt = root;
+
+    // 遍历前两级页表（非叶子节点）
     for level in 0..2 {
-        let pte = &mut pt.entries[idx[level]];
+        let pte = pt.get_pte(idx[level]);
         if !pte.is_valid() {
             if !alloc {
                 return None;
@@ -34,14 +39,22 @@ pub fn vm_getpte(root: &mut PageTable, va: VirtAddr, alloc: bool) -> Option<&mut
             let new_pt_pa = pmem_alloc(true);
             let new_pt = unsafe { &mut *(new_pt_pa.as_usize() as *mut PageTable) };
             *new_pt = PageTable::new();
-            *pte = Pte::new(new_pt_pa, PTE_V);
+            // 设置 PTE
+            pt.map(idx[level], new_pt_pa, 0); // 只设置 V 位
         }
+        // 获取下一级页表
+        let pte = pt.get_pte(idx[level]);
         pt = unsafe { &mut *(pte.pa().as_usize() as *mut PageTable) };
     }
+
+    // 返回叶子节点的 PTE（第三级）
     Some(&mut pt.entries[idx[2]])
 }
 
 /// 映射虚拟地址区间到物理地址区间
+///
+/// 将 [va_start, va_start + size) 映射到 [pa_start, pa_start + size)。
+/// 使用恒等映射（identity mapping），即 VA == PA。
 pub fn vm_mappages(
     root: &mut PageTable,
     va_start: VirtAddr,
@@ -52,8 +65,11 @@ pub fn vm_mappages(
     let mut va = va_start.as_usize();
     let mut pa = pa_start.as_usize();
     let end = va + size;
+
     while va < end {
-        let pte = vm_getpte(root, VirtAddr(va), true).expect("pte alloc failed");
+        // 获取或创建对应的 PTE
+        let pte = vm_getpte(root, VirtAddr(va), true).expect("VM: PTE allocation failed");
+        // 设置映射和权限
         *pte = Pte::new(PhysAddr(pa), perm | PTE_V);
         va += PGSIZE;
         pa += PGSIZE;
@@ -61,12 +77,16 @@ pub fn vm_mappages(
 }
 
 /// 取消映射虚拟地址区间
+///
+/// 取消 [va_start, va_start + size) 的映射，并释放对应的物理页。
 pub fn vm_unmappages(root: &mut PageTable, va_start: VirtAddr, size: usize) {
     let mut va = va_start.as_usize();
     let end = va + size;
+
     while va < end {
         if let Some(pte) = vm_getpte(root, VirtAddr(va), false) {
             if pte.is_valid() {
+                // 释放物理页
                 let pa = pte.pa();
                 pmem_free(pa, true);
                 *pte = Pte(0);
