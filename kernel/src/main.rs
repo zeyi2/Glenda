@@ -67,7 +67,7 @@ pub extern "C" fn glenda_main(hartid: usize, dtb: *const u8) -> ! {
         run_spinlock_tests(hartid);
         run_pmem_tests(hartid);
     }
-
+    printk!("Hart {} entering main loop", hartid);
     loop {
         wfi();
     }
@@ -83,5 +83,5 @@ pub fn panic(info: &PanicInfo) -> ! {
 
 fn init(hartid: usize, dtb: *const u8) {
     init_harts(hartid, dtb);
-    init_pmem();
+    init_pmem(hartid, dtb);
 }

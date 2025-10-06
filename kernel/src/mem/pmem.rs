@@ -154,7 +154,7 @@ fn region(for_kernel: bool) -> &'static AllocRegion {
     if for_kernel { &KERNEL_REGION } else { &USER_REGION }
 }
 
-pub fn initialize_regions() {
+pub fn initialize_regions(hartid: usize) {
     let kernel_end = align_up(addr_of_mut!(__bss_end) as PhysAddr);
 
     let mem_range = dtb::memory_range()
@@ -194,14 +194,13 @@ pub fn initialize_regions() {
     let u = USER_REGION.region_info();
 
     printk!(
-        "{}PMEM initialized{}: kernel [{:#x}, {:#x}) -> {} pages, user [{:#x}, {:#x}) -> {} pages",
-        ANSI_BLUE,
-        ANSI_RESET,
+        "PMEM: Initialized kernel [{:#x}, {:#x}) -> {} pages, user [{:#x}, {:#x}) -> {} pages on hart {}",
         k.begin,
         k.end,
         k.allocable,
         u.begin,
         u.end,
-        u.allocable
+        u.allocable,
+        hartid
     );
 }

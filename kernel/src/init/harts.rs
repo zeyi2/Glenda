@@ -1,8 +1,7 @@
+use crate::printk;
+use crate::printk::{ANSI_RED, ANSI_RESET};
 use core::arch::asm;
 use core::sync::atomic::{AtomicBool, Ordering};
-
-use crate::printk;
-use crate::printk::{ANSI_BLUE, ANSI_RED, ANSI_RESET};
 
 /*
  Hart State Management[1]
@@ -56,9 +55,9 @@ pub fn bootstrap_secondary_harts(hartid: usize, dtb: *const u8) {
                 continue;
             }
             match sbi_hart_start(target, start_addr, opaque) {
-                Ok(()) => printk!("{}Started hart {} via SBI{}", ANSI_BLUE, target, ANSI_RESET),
+                Ok(()) => printk!("HARTS: Started hart {} via SBI", target),
                 Err(err) => printk!(
-                    "{}Failed to start hart {} via SBI: error {}{}",
+                    "{}HARTS: Failed to start hart {} via SBI: error {}{}",
                     ANSI_RED,
                     target,
                     err,
