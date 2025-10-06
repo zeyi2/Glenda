@@ -10,8 +10,7 @@ mod printk;
 mod tests;
 
 use core::panic::PanicInfo;
-use init::init_harts;
-use init::init_pmem;
+use init::{init_harts, init_pmem, init_vm};
 use logo::LOGO;
 use printk::{ANSI_BLUE, ANSI_RED, ANSI_RESET};
 use riscv::asm::wfi;
@@ -31,6 +30,28 @@ use tests::{run_pmem_tests, run_printk_tests, run_spinlock_tests};
 */
 #[unsafe(no_mangle)]
 pub extern "C" fn glenda_main(hartid: usize, dtb: *const u8) -> ! {
+    init(hartid, dtb);
+    #[cfg(feature = "tests")]
+    {
+        run_printk_tests(hartid);
+        run_spinlock_tests(hartid);
+        run_pmem_tests(hartid);
+    }
+
+    loop {
+        wfi();
+    }
+}
+
+#[panic_handler]
+pub fn panic(info: &PanicInfo) -> ! {
+    printk!("{}PANIC{}: {}", ANSI_RED, ANSI_RESET, info);
+    loop {
+        wfi();
+    }
+}
+
+fn init(hartid: usize, dtb: *const u8) {
     // 解析设备树
     let dtb_result = dtb::init(dtb);
 
@@ -59,29 +80,10 @@ pub extern "C" fn glenda_main(hartid: usize, dtb: *const u8) -> ! {
         printk!("{}", LOGO);
         printk!("{}Glenda microkernel booting{}", ANSI_BLUE, ANSI_RESET);
     }
-
-    init(hartid, dtb);
-    #[cfg(feature = "tests")]
-    {
-        run_printk_tests(hartid);
-        run_spinlock_tests(hartid);
-        run_pmem_tests(hartid);
-    }
-
-    loop {
-        wfi();
-    }
-}
-
-#[panic_handler]
-pub fn panic(info: &PanicInfo) -> ! {
-    printk!("{}PANIC{}: {}", ANSI_RED, ANSI_RESET, info);
-    loop {
-        wfi();
-    }
-}
-
-fn init(hartid: usize, dtb: *const u8) {
+    // 启动其他核
     init_harts(hartid, dtb);
-    init_pmem();
+    // 初始化物理内存管理
+    init_pmem(hartid, dtb);
+    // 初始化虚拟内存管理
+    init_vm(hartid, dtb);
 }

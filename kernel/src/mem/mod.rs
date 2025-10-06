@@ -1,3 +1,4 @@
 pub mod addr;
 pub mod pmem;
-mod pte;
+pub mod pte;
+pub mod vm;
