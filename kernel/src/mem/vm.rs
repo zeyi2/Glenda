@@ -13,6 +13,14 @@ const PLIC_BASE: usize = 0x0C00_0000;
 const PLIC_SIZE: usize = 0x400_0000; // 64MB
 const KERNBASE: usize = 0x8020_0000;
 
+unsafe extern "C" {
+    static __text_start: u8;
+    static __text_end: u8;
+    static __rodata_start: u8;
+    static __rodata_end: u8;
+    static __data_start: u8;
+}
+
 use core::arch::asm;
 
 pub const SATP_MODE: usize = 8 << 60; // SV39
@@ -151,9 +159,22 @@ pub fn init_kernel_page_table() {
     vm_mappages(root, VirtAddr(PLIC_BASE), PhysAddr(PLIC_BASE), PLIC_SIZE, PTE_R | PTE_W);
     printk!("VM: Mapped PLIC @ {:#x}", PLIC_BASE);
 
-    // 4. 映射内核代码区和数据区 (0x8020_0000 ~ __bss_end, RX)
-    vm_mappages(root, VirtAddr(KERNBASE), PhysAddr(KERNBASE), kernel_size, PTE_R | PTE_X);
-    printk!("VM: Mapped kernel [{:#x}, {:#x})", KERNBASE, kernel_end.as_usize());
+    // 4. 映射不同的 section，防止触发页面保护异常
+    // FIXME: This is basically C, RIIR!
+    let text_start = unsafe { &__text_start as *const u8 as usize };
+    let text_end = unsafe { &__text_end as *const u8 as usize };
+    let rodata_start = unsafe { &__rodata_start as *const u8 as usize };
+    let rodata_end = unsafe { &__rodata_end as *const u8 as usize };
+    let data_start = unsafe { &__data_start as *const u8 as usize };
+
+    map_range(root, text_start, text_end, PTE_R | PTE_X);
+    printk!("VM: Mapped kernel text [{:#x}, {:#x})", text_start, align_up(text_end));
+
+    map_range(root, rodata_start, rodata_end, PTE_R);
+    printk!("VM: Mapped kernel rodata [{:#x}, {:#x})", rodata_start, align_up(rodata_end));
+
+    map_range(root, data_start, kernel_end.as_usize(), PTE_R | PTE_W);
+    printk!("VM: Mapped kernel data+bss [{:#x}, {:#x})", data_start, kernel_end.as_usize());
 
     // 5. 映射可分配区域 (内核堆和用户内存池, RW)
     vm_mappages(root, VirtAddr(alloc_start), PhysAddr(alloc_start), alloc_size, PTE_R | PTE_W);
@@ -163,6 +184,24 @@ pub fn init_kernel_page_table() {
     let mut kpt = KERNEL_PAGE_TABLE.lock();
     *kpt = Some(root_pa);
     printk!("VM: Kernel page table initialized at PA {:#x}", root_pa.as_usize());
+}
+
+fn align_down(addr: usize) -> usize {
+    addr & !(PGSIZE - 1)
+}
+
+fn align_up(addr: usize) -> usize {
+    (addr + PGSIZE - 1) & !(PGSIZE - 1)
+}
+
+fn map_range(root: &mut PageTable, start: usize, end: usize, perm: usize) {
+    if start >= end {
+        return;
+    }
+    let va_start = align_down(start);
+    let va_end = align_up(end);
+    let size = va_end - va_start;
+    vm_mappages(root, VirtAddr(va_start), PhysAddr(va_start), size, perm);
 }
 
 // 切换到内核页表
