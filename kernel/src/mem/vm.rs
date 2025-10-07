@@ -151,9 +151,8 @@ pub fn init_kernel_page_table() {
     vm_mappages(root, VirtAddr(PLIC_BASE), PhysAddr(PLIC_BASE), PLIC_SIZE, PTE_R | PTE_W);
     printk!("VM: Mapped PLIC @ {:#x}", PLIC_BASE);
 
-    // 4. 映射内核代码区和数据区 (0x8020_0000 ~ __bss_end, RWX)
-    // 注意：为简化处理，这里给内核区域 RWX 权限
-    vm_mappages(root, VirtAddr(KERNBASE), PhysAddr(KERNBASE), kernel_size, PTE_R | PTE_W | PTE_X);
+    // 4. 映射内核代码区和数据区 (0x8020_0000 ~ __bss_end, RX)
+    vm_mappages(root, VirtAddr(KERNBASE), PhysAddr(KERNBASE), kernel_size, PTE_R | PTE_X);
     printk!("VM: Mapped kernel [{:#x}, {:#x})", KERNBASE, kernel_end.as_usize());
 
     // 5. 映射可分配区域 (内核堆和用户内存池, RW)
