@@ -138,25 +138,23 @@ pub fn init_kernel_page_table() {
 
     // 获取内核结束地址 (__bss_end)
     let kernel_end = crate::mem::pmem::kernel_region_info().begin;
-    let kernel_size = kernel_end.as_usize() - KERNBASE;
 
     // 获取可分配区域的范围
     let kernel_region = crate::mem::pmem::kernel_region_info();
     let user_region = crate::mem::pmem::user_region_info();
     let alloc_start = kernel_region.begin.as_usize();
     let alloc_end = user_region.end.as_usize();
-    let alloc_size = alloc_end - alloc_start;
 
     // 1. 映射 UART (0x1000_0000, 设备寄存器, RW)
-    vm_mappages(root, VirtAddr(UART_BASE), PhysAddr(UART_BASE), UART_SIZE, PTE_R | PTE_W);
+    map_range(root, UART_BASE, UART_BASE + UART_SIZE, PTE_R | PTE_W);
     printk!("VM: Mapped UART @ {:#x}", UART_BASE);
 
     // 2. 映射 CLINT (0x0200_0000, 设备寄存器, RW)
-    vm_mappages(root, VirtAddr(CLINT_BASE), PhysAddr(CLINT_BASE), CLINT_SIZE, PTE_R | PTE_W);
+    map_range(root, CLINT_BASE, CLINT_BASE + CLINT_SIZE, PTE_R | PTE_W);
     printk!("VM: Mapped CLINT @ {:#x}", CLINT_BASE);
 
     // 3. 映射 PLIC (0x0C00_0000, 设备寄存器, RW)
-    vm_mappages(root, VirtAddr(PLIC_BASE), PhysAddr(PLIC_BASE), PLIC_SIZE, PTE_R | PTE_W);
+    map_range(root, PLIC_BASE, PLIC_BASE + PLIC_SIZE, PTE_R | PTE_W);
     printk!("VM: Mapped PLIC @ {:#x}", PLIC_BASE);
 
     // 4. 映射不同的 section，防止触发页面保护异常
@@ -177,7 +175,7 @@ pub fn init_kernel_page_table() {
     printk!("VM: Mapped kernel data+bss [{:#x}, {:#x})", data_start, kernel_end.as_usize());
 
     // 5. 映射可分配区域 (内核堆和用户内存池, RW)
-    vm_mappages(root, VirtAddr(alloc_start), PhysAddr(alloc_start), alloc_size, PTE_R | PTE_W);
+    map_range(root, alloc_start, alloc_end, PTE_R | PTE_W);
     printk!("VM: Mapped allocable region [{:#x}, {:#x})", alloc_start, alloc_end);
 
     // 保存根页表的物理地址到全局变量
@@ -194,6 +192,7 @@ fn align_up(addr: usize) -> usize {
     (addr + PGSIZE - 1) & !(PGSIZE - 1)
 }
 
+#[inline]
 fn map_range(root: &mut PageTable, start: usize, end: usize, perm: usize) {
     if start >= end {
         return;

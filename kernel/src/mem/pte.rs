@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! RISC-V Sv39 页表项与页表操作
 use super::addr::{PhysAddr, VirtAddr};
 

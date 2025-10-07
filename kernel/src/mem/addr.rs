@@ -76,4 +76,13 @@ impl VirtAddr {
             (self.0 >> 12) & 0x1ff, // VPN[0]
         ]
     }
+    // 对齐到页边界
+    #[inline]
+    pub const fn align_down(&self) -> Self {
+        VirtAddr(self.0 & !PGMASK)
+    }
+    #[inline]
+    pub const fn align_up(&self) -> Self {
+        VirtAddr((self.0 + PGMASK) & !PGMASK)
+    }
 }
