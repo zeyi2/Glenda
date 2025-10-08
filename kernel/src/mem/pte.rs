@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use super::addr::PhysAddr;
+
 pub const PTE_V: usize = 1 << 0; // Valid
 pub const PTE_R: usize = 1 << 1; // Read
 pub const PTE_W: usize = 1 << 2; // Write
@@ -39,4 +41,9 @@ pub const fn pte_check(pte: Pte) -> bool {
 #[inline(always)]
 pub const fn pte_is_valid(pte: Pte) -> bool {
     pte & PTE_V != 0
+}
+
+#[inline(always)]
+pub const fn pte_to_pa(pte: Pte) -> PhysAddr {
+    pte_get_ppn(pte) << 12
 }

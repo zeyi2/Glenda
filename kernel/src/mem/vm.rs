@@ -4,6 +4,8 @@ use core::panic;
 use super::PGNUM;
 use super::addr::{PhysAddr, VirtAddr};
 use super::pte::{PTE_V, Pte};
+use super::pte::{pte_check, pte_is_valid};
+use crate::printk;
 
 const SATP_SV39: usize = 8 << 60;
 
@@ -58,7 +60,53 @@ pub fn vm_unmappages(table: &PageTable, va: VirtAddr, size: usize, free: bool) {
 }
 
 #[cfg(feature = "tests")]
-pub fn vm_print(table: &PageTable) {}
+pub fn vm_print(table: &PageTable) {
+    let level2 = table;
+    let mut pte: Pte;
+    printk!("Page Table at {:p}\n", level2);
+    for i in 0..PGNUM {
+        use crate::mem::pte::pte_to_pa;
+
+        pte = level2.entries[i];
+        if !pte_is_valid(pte) {
+            continue;
+        }
+        if !pte_check(pte) {
+            panic!("vm_print: invalid PTE at level 2 {}", pte);
+        }
+        let level1 = pte_to_pa(pte) as *const PageTable;
+        printk!("   L2 {:3} PTE {:016x} -> {:p}\n", i, pte, level1);
+        for j in 0..PGNUM {
+            let level0 = unsafe { (*level1).entries[j] };
+            if !pte_is_valid(level0) {
+                continue;
+            }
+            if !pte_check(level0) {
+                panic!("vm_print: invalid PTE at level 1 {}", level0);
+            }
+            let level0_pa = pte_to_pa(level0) as *const PageTable;
+            printk!("       L1 {:3} PTE {:016x} -> {:p}\n", j, level0, level0_pa);
+            for k in 0..PGNUM {
+                pte = unsafe { (*level0_pa).entries[k] };
+                if !pte_is_valid(pte) {
+                    continue;
+                }
+                if !pte_check(pte) {
+                    panic!("vm_print: invalid PTE at level 0 {}", pte);
+                }
+                let pa = pte_to_pa(pte);
+                let va = (i << 30) | (j << 21) | (k << 12);
+                printk!(
+                    "           L0 {:3} PTE {:016x} -> {:p} VA {:p}\n",
+                    k,
+                    pte,
+                    pa as *const u8,
+                    va as *const u8
+                );
+            }
+        }
+    }
+}
 
 #[inline(always)]
 fn make_satp(ppn: usize) -> usize {
@@ -67,8 +115,10 @@ fn make_satp(ppn: usize) -> usize {
 
 pub fn init_kernel_vm() {}
 pub fn switch_to_kernel_vm() {
+    let root_pa = (&KERNEL_PAGE_TABLE as *const PageTable) as usize;
+
     unsafe {
-        asm!("csrw satp, {}", in(reg) make_satp((&KERNEL_PAGE_TABLE as *const PageTable) as usize >> 12));
+        asm!("csrw satp, {}", in(reg) make_satp(root_pa >> 12));
         asm!("sfence.vma zero, zero");
     }
 }
