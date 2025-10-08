@@ -7,3 +7,4 @@ pub const VA_MAX: usize = 1 << 38;
 pub mod addr;
 pub mod pmem;
 pub mod pte;
+pub mod vm;

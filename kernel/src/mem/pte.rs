@@ -35,3 +35,8 @@ pub const fn pte_get_flags(pte: Pte) -> PteFlags {
 pub const fn pte_check(pte: Pte) -> bool {
     pte & (PTE_R | PTE_W | PTE_X) != 0
 }
+
+#[inline(always)]
+pub const fn pte_is_valid(pte: Pte) -> bool {
+    pte & PTE_V != 0
+}
