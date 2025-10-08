@@ -1,4 +1,3 @@
-#[allow(dead_code)]
 use core::cell::UnsafeCell;
 use core::cmp;
 use core::hint::spin_loop;
@@ -9,7 +8,6 @@ use core::sync::atomic::{
 
 use crate::dtb;
 use crate::init;
-use crate::mem::addr::PhysAddr;
 use crate::mem::pmem;
 use crate::mem::pmem::PGSIZE;
 use crate::printk;
@@ -27,20 +25,20 @@ static ACTIVE_PARTICIPANTS: AtomicUsize = AtomicUsize::new(0);
 static KERNEL_INFO_READY: AtomicBool = AtomicBool::new(false);
 
 struct HartSlotTable {
-    slots: UnsafeCell<[[PhysAddr; MAX_TRACKED_PAGES]; MAX_HARTS]>,
+    slots: UnsafeCell<[[usize; MAX_TRACKED_PAGES]; MAX_HARTS]>,
 }
 impl HartSlotTable {
     const fn new() -> Self {
-        Self { slots: UnsafeCell::new([[PhysAddr(0); MAX_TRACKED_PAGES]; MAX_HARTS]) }
+        Self { slots: UnsafeCell::new([[0; MAX_TRACKED_PAGES]; MAX_HARTS]) }
     }
     #[inline]
-    fn store(&self, hart: usize, idx: usize, value: PhysAddr) {
+    fn store(&self, hart: usize, idx: usize, value: usize) {
         unsafe {
             (*self.slots.get())[hart][idx] = value;
         }
     }
     #[inline]
-    fn load(&self, hart: usize, idx: usize) -> PhysAddr {
+    fn load(&self, hart: usize, idx: usize) -> usize {
         unsafe { (*self.slots.get())[hart][idx] }
     }
 }
@@ -110,9 +108,9 @@ fn kernel_concurrent_alloc_test(hartid: usize) {
     }
 
     for slot in 0..pages_per_hart {
-        let page = pmem::pmem_alloc(true);
+        let page = pmem::pmem_alloc(true) as usize;
         unsafe {
-            core::ptr::write_bytes(page.as_usize() as *mut u8, hartid as u8 + 1, PGSIZE);
+            core::ptr::write_bytes(page as *mut u8, hartid as u8 + 1, PGSIZE);
         }
         PAGE_SLOTS.store(hartid, slot, page);
     }
@@ -125,7 +123,7 @@ fn kernel_concurrent_alloc_test(hartid: usize) {
     for slot in 0..pages_per_hart {
         let addr = PAGE_SLOTS.load(hartid, slot);
         pmem::pmem_free(addr, true);
-        PAGE_SLOTS.store(hartid, slot, PhysAddr(0));
+        PAGE_SLOTS.store(hartid, slot, 0);
     }
 
     HARTS_DONE_FREE.fetch_add(1, AcqRel);
@@ -157,17 +155,17 @@ fn kernel_concurrent_alloc_test(hartid: usize) {
 
 fn user_region_validation() {
     const TEST_CNT: usize = 10;
-    let mut pages = [PhysAddr::new(0); TEST_CNT];
+    let mut pages = [0usize; TEST_CNT];
 
     let before = pmem::user_region_info();
     let allocable_before = before.allocable;
     let pages_to_use = cmp::min(TEST_CNT, allocable_before);
 
     for idx in 0..pages_to_use {
-        let page = pmem::pmem_alloc(false);
+        let page = pmem::pmem_alloc(false) as usize;
         pages[idx] = page;
         unsafe {
-            core::ptr::write_bytes(page.as_usize() as *mut u8, 0xAA, PGSIZE);
+            core::ptr::write_bytes(page as *mut u8, 0xAA, PGSIZE);
         }
     }
 
@@ -184,9 +182,9 @@ fn user_region_validation() {
 
     let mut zero_verified = true;
     for idx in 0..pages_to_use {
-        let page = pmem::pmem_alloc(false);
+        let page = pmem::pmem_alloc(false) as usize;
         pages[idx] = page;
-        zero_verified &= is_zeroed(page.as_usize());
+        zero_verified &= is_zeroed(page);
     }
 
     for idx in 0..pages_to_use {
@@ -228,16 +226,16 @@ fn is_zeroed(page: usize) -> bool {
 }
 
 fn exhaust_user_region() -> bool {
-    let mut head = PhysAddr::new(0);
+    let mut head: usize = 0;
     let mut count = 0usize;
 
     loop {
         match pmem::pmem_try_alloc(false) {
             Some(page) => {
                 unsafe {
-                    core::ptr::write(page.as_usize() as *mut usize, head.as_usize());
+                    core::ptr::write(page as *mut usize, head);
                 }
-                head = page;
+                head = page as usize;
                 count += 1;
             }
             None => break,
@@ -245,10 +243,10 @@ fn exhaust_user_region() -> bool {
     }
 
     let mut node = head;
-    while node.as_usize() != 0 {
-        let next = unsafe { core::ptr::read(node.as_usize() as *const usize) };
+    while node != 0 {
+        let next = unsafe { core::ptr::read(node as *const usize) };
         pmem::pmem_free(node, false);
-        node = PhysAddr::new(next);
+        node = next;
     }
 
     count > 0
