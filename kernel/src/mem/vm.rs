@@ -233,11 +233,7 @@ pub fn init_kernel_vm() {
     // 权限映射, PTE_A/D 理论上硬件会帮忙做，但我不确定 QEMU Virt 的具体行为，所以还是加上
     let text_start_addr = unsafe { &__text_start as *const u8 as usize };
     let text_end_addr = unsafe { &__text_end as *const u8 as usize };
-    printk!(
-        "[vm.init] map .text {:p}..{:p}",
-        text_start_addr as *const u8,
-        text_end_addr as *const u8
-    );
+    printk!("VM: Map .text {:p}..{:p}", text_start_addr as *const u8, text_end_addr as *const u8);
     vm_mappages(
         &KERNEL_PAGE_TABLE,
         text_start_addr,
@@ -249,7 +245,7 @@ pub fn init_kernel_vm() {
     let rodata_start_addr = unsafe { &__rodata_start as *const u8 as usize };
     let rodata_end_addr = unsafe { &__rodata_end as *const u8 as usize };
     printk!(
-        "[vm.init] map .rodata {:p}..{:p}",
+        "VM: Map .rodata {:p}..{:p}",
         rodata_start_addr as *const u8,
         rodata_end_addr as *const u8
     );
@@ -263,11 +259,7 @@ pub fn init_kernel_vm() {
 
     let data_start_addr = unsafe { &__data_start as *const u8 as usize };
     let data_end_addr = unsafe { &__data_end as *const u8 as usize };
-    printk!(
-        "[vm.init] map .data   {:p}..{:p}",
-        data_start_addr as *const u8,
-        data_end_addr as *const u8
-    );
+    printk!("VM: Map .data {:p}..{:p}", data_start_addr as *const u8, data_end_addr as *const u8);
     vm_mappages(
         &KERNEL_PAGE_TABLE,
         data_start_addr,
@@ -278,11 +270,7 @@ pub fn init_kernel_vm() {
 
     let bss_start_addr = unsafe { &__bss_start as *const u8 as usize };
     let bss_end_addr = unsafe { &__bss_end as *const u8 as usize };
-    printk!(
-        "[vm.init] map .bss    {:p}..{:p}",
-        bss_start_addr as *const u8,
-        bss_end_addr as *const u8
-    );
+    printk!("VM: Map .bss {:p}..{:p}", bss_start_addr as *const u8, bss_end_addr as *const u8);
     vm_mappages(
         &KERNEL_PAGE_TABLE,
         bss_start_addr,
@@ -294,7 +282,7 @@ pub fn init_kernel_vm() {
     // MMIO 映射
     let uart_base = dtb::uart_config().unwrap_or(driver_uart::DEFAULT_QEMU_VIRT).base();
     let uart_size = PGSIZE;
-    printk!("[vm.init] map UART @ {:p}", uart_base as *const u8);
+    printk!("VM: Map UART @ {:p}", uart_base as *const u8);
     vm_mappages(&KERNEL_PAGE_TABLE, uart_base, uart_size, uart_base, PTE_R | PTE_W | PTE_A | PTE_D);
 
     // 物理内存映射 (buggy, 后面按 alloc 按需分配吧)
