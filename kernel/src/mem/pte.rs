@@ -47,3 +47,8 @@ pub const fn pte_is_valid(pte: Pte) -> bool {
 pub const fn pte_to_pa(pte: Pte) -> PhysAddr {
     pte_get_ppn(pte) << 12
 }
+
+#[inline(always)]
+pub const fn pa_to_pte(pa: PhysAddr, flags: PteFlags) -> Pte {
+    (pa >> 12) << 10 | (flags & 0x3FF)
+}
