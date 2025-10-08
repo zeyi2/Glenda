@@ -9,7 +9,7 @@ use crate::printk;
 use crate::printk::{ANSI_GREEN, ANSI_RESET, ANSI_YELLOW};
 
 pub fn run(hartid: usize) {
-    printk!("{}[TEST]{} VM test start (hart {})", ANSI_YELLOW, ANSI_RESET, hartid);
+    printk!("{}[TEST]{} VM test started on hart {})", ANSI_YELLOW, ANSI_RESET, hartid);
     if hartid == 0 {
         vm_func_test();
     }

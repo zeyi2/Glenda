@@ -50,10 +50,12 @@ unsafe impl Sync for HartSlotTable {}
 static PAGE_SLOTS: HartSlotTable = HartSlotTable::new();
 
 pub fn run(hartid: usize) {
+    printk!("{}[TEST]{} PMEM test started on hart {}", ANSI_YELLOW, ANSI_RESET, hartid);
     kernel_concurrent_alloc_test(hartid);
     if hartid == 0 {
         user_region_validation();
     }
+    printk!("{}[PASS]{} PMEM test", ANSI_GREEN, ANSI_RESET);
 }
 
 fn kernel_concurrent_alloc_test(hartid: usize) {
@@ -87,13 +89,7 @@ fn kernel_concurrent_alloc_test(hartid: usize) {
     }
 
     if hartid >= active {
-        printk!(
-            "{}[INFO]{} pmem_kernel_concurrent: hart {} idle ({} active)",
-            ANSI_YELLOW,
-            ANSI_RESET,
-            hartid,
-            active
-        );
+        printk!("pmem_kernel_concurrent: hart {} idle ({} active)", hartid, active);
         return;
     }
 
@@ -136,22 +132,12 @@ fn kernel_concurrent_alloc_test(hartid: usize) {
         }
         let final_info = kernel_region_info();
         let expected = TOTAL_PAGES.load(Acquire);
-        if final_info.allocable == expected {
-            printk!(
-                "{}[PASS]{} pmem_kernel_concurrent: {} pages restored",
-                ANSI_GREEN,
-                ANSI_RESET,
-                expected
-            );
-        } else {
-            printk!(
-                "{}[FAIL]{} pmem_kernel_concurrent: allocable {} expected {}",
-                ANSI_RED,
-                ANSI_RESET,
-                final_info.allocable,
-                expected
-            );
-        }
+        assert_eq!(
+            final_info.allocable, expected,
+            "pmem_kernel_concurrent: final allocable {} expected {}",
+            final_info.allocable, expected
+        );
+        printk!("pmem_kernel_concurrent: {} pages restored", expected);
     }
 }
 
@@ -173,14 +159,22 @@ fn user_region_validation() {
 
     let during = user_region_info();
     let expected_after_alloc = allocable_before.saturating_sub(pages_to_use);
-    let mut pass = during.allocable == expected_after_alloc;
+    assert_eq!(
+        during.allocable, expected_after_alloc,
+        "pmem_user_region: allocable after alloc {} expected {}",
+        during.allocable, expected_after_alloc
+    );
 
     for idx in 0..pages_to_use {
         pmem_free(pages[idx], false);
     }
 
     let after = user_region_info();
-    pass &= after.allocable == allocable_before;
+    assert_eq!(
+        after.allocable, allocable_before,
+        "pmem_user_region: allocable after free {} expected {}",
+        after.allocable, allocable_before
+    );
 
     let mut zero_verified = true;
     for idx in 0..pages_to_use {
@@ -192,25 +186,18 @@ fn user_region_validation() {
     for idx in 0..pages_to_use {
         pmem_free(pages[idx], false);
     }
+    assert_eq!(
+        user_region_info().allocable,
+        allocable_before,
+        "pmem_user_region: allocable after zero-check free {} expected {}",
+        user_region_info().allocable,
+        allocable_before
+    );
 
-    let exhaustion_detected = exhaust_user_region();
+    assert!(zero_verified, "pmem_user_region: zero check failed");
 
-    if pass && zero_verified && exhaustion_detected {
-        printk!(
-            "{}[PASS]{} pmem_user_region: allocation/free/zero validated",
-            ANSI_GREEN,
-            ANSI_RESET
-        );
-    } else {
-        printk!(
-            "{}[FAIL]{} pmem_user_region: alloc {}, zero {}, exhaustion {}",
-            ANSI_RED,
-            ANSI_RESET,
-            pass,
-            zero_verified,
-            exhaustion_detected
-        );
-    }
+    assert!(exhaust_user_region(), "pmem_user_region: exhaustion test failed");
+    printk!("pmem_user_region: allocation/free/zero validated");
 }
 
 fn is_zeroed(page: usize) -> bool {
