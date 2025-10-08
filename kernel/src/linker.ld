@@ -10,24 +10,27 @@ SECTIONS
   . = 0x80200000;
 
   .text : ALIGN(4) {
-    PROVIDE(__text_start = .);
+    __text_start = .;
     KEEP(*(.text.start))
     *(.text .text.*)
-    PROVIDE(__text_end = .);
+    __text_end = .;
   }
 
+  . = ALIGN(0x1000);
   .rodata : ALIGN(16) {
-    PROVIDE(__rodata_start = .);
-     *(.rodata .rodata.*)
-    PROVIDE(__rodata_end = .);
+    __rodata_start = .;
+    *(.rodata .rodata.*)
+    __rodata_end = .;
   }
 
+  . = ALIGN(0x1000);
   .data : ALIGN(16) {
-    PROVIDE(__data_start = .);
-    *(.sdata .sdata.* .data .data.*)  
-    PROVIDE(__data_end = .);
+    __data_start = .;
+    *(.sdata .sdata.* .data .data.*)
+    __data_end = .;
   }
 
+  . = ALIGN(0x1000);
   .bss : ALIGN(16) {
     PROVIDE(__bss_start = .);
     *(.sbss .sbss.* .bss .bss.* COMMON)

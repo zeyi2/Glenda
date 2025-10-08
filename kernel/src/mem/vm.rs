@@ -5,17 +5,31 @@ use core::panic;
 
 use super::addr::{PhysAddr, VirtAddr, align_down, align_up, vpn};
 use super::pmem::{kernel_region_info, pmem_alloc, pmem_free, user_region_info};
-use super::pte::{PTE_V, Pte, pa_to_pte, pte_is_leaf, pte_is_valid, pte_to_pa};
-use super::pte::{pte_get_flags, pte_is_table};
+use super::pte::{PTE_A, PTE_D, PTE_R, PTE_V, PTE_W, PTE_X, Pte};
+use super::pte::{pa_to_pte, pte_is_leaf, pte_is_valid, pte_to_pa};
 use super::{PGNUM, PGSIZE, VA_MAX};
+use crate::dtb;
 use crate::printk;
 
 const SATP_SV39: usize = 8 << 60;
 
-#[repr(C)]
+// align 4096, 防止 sfence.vma 直接 TRAP
+#[repr(C, align(4096))]
 #[derive(Clone, Copy)]
 pub struct PageTable {
     entries: [Pte; PGNUM],
+}
+
+// see linker.ld
+unsafe extern "C" {
+    static __text_start: u8;
+    static __text_end: u8;
+    static __rodata_start: u8;
+    static __rodata_end: u8;
+    static __data_start: u8;
+    static __data_end: u8;
+    static __bss_start: u8;
+    static __bss_end: u8;
 }
 
 unsafe impl Sync for PageTable {}
@@ -215,7 +229,81 @@ fn make_satp(ppn: usize) -> usize {
     SATP_SV39 | ppn
 }
 
-pub fn init_kernel_vm() {}
+pub fn init_kernel_vm() {
+    // 权限映射, PTE_A/D 理论上硬件会帮忙做，但我不确定 QEMU Virt 的具体行为，所以还是加上
+    let text_start_addr = unsafe { &__text_start as *const u8 as usize };
+    let text_end_addr = unsafe { &__text_end as *const u8 as usize };
+    printk!(
+        "[vm.init] map .text {:p}..{:p}",
+        text_start_addr as *const u8,
+        text_end_addr as *const u8
+    );
+    vm_mappages(
+        &KERNEL_PAGE_TABLE,
+        text_start_addr,
+        text_end_addr - text_start_addr,
+        text_start_addr,
+        PTE_R | PTE_X | PTE_A,
+    );
+
+    let rodata_start_addr = unsafe { &__rodata_start as *const u8 as usize };
+    let rodata_end_addr = unsafe { &__rodata_end as *const u8 as usize };
+    printk!(
+        "[vm.init] map .rodata {:p}..{:p}",
+        rodata_start_addr as *const u8,
+        rodata_end_addr as *const u8
+    );
+    vm_mappages(
+        &KERNEL_PAGE_TABLE,
+        rodata_start_addr,
+        rodata_end_addr - rodata_start_addr,
+        rodata_start_addr,
+        PTE_R | PTE_A,
+    );
+
+    let data_start_addr = unsafe { &__data_start as *const u8 as usize };
+    let data_end_addr = unsafe { &__data_end as *const u8 as usize };
+    printk!(
+        "[vm.init] map .data   {:p}..{:p}",
+        data_start_addr as *const u8,
+        data_end_addr as *const u8
+    );
+    vm_mappages(
+        &KERNEL_PAGE_TABLE,
+        data_start_addr,
+        data_end_addr - data_start_addr,
+        data_start_addr,
+        PTE_R | PTE_W | PTE_A | PTE_D,
+    );
+
+    let bss_start_addr = unsafe { &__bss_start as *const u8 as usize };
+    let bss_end_addr = unsafe { &__bss_end as *const u8 as usize };
+    printk!(
+        "[vm.init] map .bss    {:p}..{:p}",
+        bss_start_addr as *const u8,
+        bss_end_addr as *const u8
+    );
+    vm_mappages(
+        &KERNEL_PAGE_TABLE,
+        bss_start_addr,
+        bss_end_addr - bss_start_addr,
+        bss_start_addr,
+        PTE_R | PTE_W | PTE_A | PTE_D,
+    );
+
+    // MMIO 映射
+    let uart_base = dtb::uart_config().unwrap_or(driver_uart::DEFAULT_QEMU_VIRT).base();
+    let uart_size = PGSIZE;
+    printk!("[vm.init] map UART @ {:p}", uart_base as *const u8);
+    vm_mappages(&KERNEL_PAGE_TABLE, uart_base, uart_size, uart_base, PTE_R | PTE_W | PTE_A | PTE_D);
+
+    // 物理内存映射 (buggy, 后面按 alloc 按需分配吧)
+    // let mem_range = dtb::memory_range().unwrap_or(dtb::MemoryRange {
+    //     start: 0x80000000,
+    //     size: 128 * 1024 * 1024,
+    // });
+    // vm_mappages(&KERNEL_PAGE_TABLE, mem_range.start, mem_range.size, mem_range.start, PTE_R | PTE_W);
+}
 
 pub fn switch_to_kernel_vm() {
     let root_pa = (&KERNEL_PAGE_TABLE as *const PageTable) as usize;

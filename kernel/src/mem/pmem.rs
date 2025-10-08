@@ -11,7 +11,7 @@ use super::addr::{__alloc_start, __bss_end, PhysAddr, align_down, align_up};
 use crate::dtb;
 use crate::mem::KERN_PAGES;
 use crate::printk;
-use crate::printk::{ANSI_BLUE, ANSI_RED, ANSI_RESET};
+use crate::printk::{ANSI_RED, ANSI_RESET};
 
 #[repr(C)]
 struct FreePage {

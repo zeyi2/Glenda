@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub const PGSIZE: usize = 4096;
 pub const PGNUM: usize = PGSIZE / core::mem::size_of::<usize>(); // 2^9
 pub const PGMASK: usize = PGSIZE - 1;
