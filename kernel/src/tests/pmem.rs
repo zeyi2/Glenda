@@ -8,8 +8,11 @@ use core::sync::atomic::{
 
 use crate::dtb;
 use crate::init;
-use crate::mem::addr::{PGSIZE, PhysAddr, VirtAddr};
-use crate::mem::pmem;
+use crate::mem::PGSIZE;
+use crate::mem::addr::{PhysAddr, VirtAddr};
+use crate::mem::pmem::{
+    kernel_region_info, pmem_alloc, pmem_free, pmem_try_alloc, user_region_info,
+};
 use crate::printk;
 use crate::printk::{ANSI_GREEN, ANSI_RED, ANSI_RESET, ANSI_YELLOW};
 
@@ -47,7 +50,6 @@ unsafe impl Sync for HartSlotTable {}
 static PAGE_SLOTS: HartSlotTable = HartSlotTable::new();
 
 pub fn run(hartid: usize) {
-    init::init_pmem();
     kernel_concurrent_alloc_test(hartid);
     if hartid == 0 {
         user_region_validation();
@@ -61,7 +63,7 @@ fn kernel_concurrent_alloc_test(hartid: usize) {
     }
 
     if hartid == 0 {
-        let info = pmem::kernel_region_info();
+        let info = kernel_region_info();
         TOTAL_PAGES.store(info.allocable, Release);
         let active = if info.allocable == 0 { 0 } else { cmp::min(potential, info.allocable) };
         ACTIVE_PARTICIPANTS.store(active, Release);
@@ -108,7 +110,7 @@ fn kernel_concurrent_alloc_test(hartid: usize) {
     }
 
     for slot in 0..pages_per_hart {
-        let page = pmem::pmem_alloc(true) as PhysAddr;
+        let page = pmem_alloc(true) as PhysAddr;
         unsafe {
             core::ptr::write_bytes(page as *mut u8, hartid as u8 + 1, PGSIZE);
         }
@@ -122,7 +124,7 @@ fn kernel_concurrent_alloc_test(hartid: usize) {
 
     for slot in 0..pages_per_hart {
         let addr = PAGE_SLOTS.load(hartid, slot);
-        pmem::pmem_free(addr, true);
+        pmem_free(addr, true);
         PAGE_SLOTS.store(hartid, slot, 0);
     }
 
@@ -132,7 +134,7 @@ fn kernel_concurrent_alloc_test(hartid: usize) {
         while HARTS_DONE_FREE.load(Acquire) < active {
             spin_loop();
         }
-        let final_info = pmem::kernel_region_info();
+        let final_info = kernel_region_info();
         let expected = TOTAL_PAGES.load(Acquire);
         if final_info.allocable == expected {
             printk!(
@@ -157,38 +159,38 @@ fn user_region_validation() {
     const TEST_CNT: usize = 10;
     let mut pages = [0usize; TEST_CNT];
 
-    let before = pmem::user_region_info();
+    let before = user_region_info();
     let allocable_before = before.allocable;
     let pages_to_use = cmp::min(TEST_CNT, allocable_before);
 
     for idx in 0..pages_to_use {
-        let page = pmem::pmem_alloc(false) as PhysAddr;
+        let page = pmem_alloc(false) as PhysAddr;
         pages[idx] = page;
         unsafe {
             core::ptr::write_bytes(page as *mut u8, 0xAA, PGSIZE);
         }
     }
 
-    let during = pmem::user_region_info();
+    let during = user_region_info();
     let expected_after_alloc = allocable_before.saturating_sub(pages_to_use);
     let mut pass = during.allocable == expected_after_alloc;
 
     for idx in 0..pages_to_use {
-        pmem::pmem_free(pages[idx], false);
+        pmem_free(pages[idx], false);
     }
 
-    let after = pmem::user_region_info();
+    let after = user_region_info();
     pass &= after.allocable == allocable_before;
 
     let mut zero_verified = true;
     for idx in 0..pages_to_use {
-        let page = pmem::pmem_alloc(false) as PhysAddr;
+        let page = pmem_alloc(false) as PhysAddr;
         pages[idx] = page;
         zero_verified &= is_zeroed(page);
     }
 
     for idx in 0..pages_to_use {
-        pmem::pmem_free(pages[idx], false);
+        pmem_free(pages[idx], false);
     }
 
     let exhaustion_detected = exhaust_user_region();
@@ -230,7 +232,7 @@ fn exhaust_user_region() -> bool {
     let mut count = 0usize;
 
     loop {
-        match pmem::pmem_try_alloc(false) {
+        match pmem_try_alloc(false) {
             Some(page) => {
                 unsafe {
                     core::ptr::write(page as *mut usize, head);
@@ -245,7 +247,7 @@ fn exhaust_user_region() -> bool {
     let mut node = head;
     while node != 0 {
         let next = unsafe { core::ptr::read(node as *const usize) };
-        pmem::pmem_free(node, false);
+        pmem_free(node, false);
         node = next;
     }
 

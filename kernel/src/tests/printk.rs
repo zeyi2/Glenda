@@ -7,7 +7,7 @@ pub fn run() {
     printk!("{}[PASS]{} Printk test", ANSI_GREEN, ANSI_RESET);
 }
 fn printk_test() {
-    printk!("{}printk test start{}", ANSI_BLUE, ANSI_RESET);
+    printk!("{}[TEST]{} Printk test start", ANSI_YELLOW, ANSI_RESET);
     printk!(
         "{}Red{} {}Green{} {}Yellow{} {}Blue{} {}Magenta{} {}Cyan{} {}White{}",
         ANSI_RED,

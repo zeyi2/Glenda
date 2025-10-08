@@ -52,15 +52,11 @@ fn spinlock_test(hartid: usize, harts_under_test: usize) -> usize {
 }
 
 pub fn run(hartid: usize) {
+    printk!("{}[TEST]{} Spinlock test start (hart {})", ANSI_YELLOW, ANSI_RESET, hartid);
     let harts_under_test = dtb::hart_count();
     let result = spinlock_test(hartid, harts_under_test);
     if result == 0 {
-        printk!(
-            "{}hart {} idle{} (not part of spinlock test)",
-            ANSI_YELLOW,
-            hartid,
-            ANSI_RESET
-        );
+        printk!("{}hart {} idle{} (not part of spinlock test)", ANSI_YELLOW, hartid, ANSI_RESET);
         return;
     }
 
