@@ -2,20 +2,14 @@
 
 use core::cell::OnceCell;
 use core::cmp;
-use core::ptr::{self, addr_of_mut, NonNull};
+use core::ptr::{self, NonNull, addr_of_mut};
 
 use spin::Mutex;
 
+use super::addr::{__bss_end, PGSIZE, PhysAddr, align_down, align_up};
 use crate::dtb;
 use crate::printk;
 use crate::printk::{ANSI_BLUE, ANSI_RED, ANSI_RESET};
-use crate::utils::align::{align_down, align_up};
-
-pub const PGSIZE: usize = 4096;
-
-unsafe extern "C" {
-    static mut __bss_end: u8;
-}
 
 #[repr(C)]
 struct FreePage {
@@ -30,8 +24,8 @@ struct RegionInner {
 
 #[derive(Debug, Clone, Copy)]
 struct RegionBounds {
-    begin: usize,
-    end: usize,
+    begin: PhysAddr,
+    end: PhysAddr,
 }
 
 struct AllocRegion {
@@ -49,9 +43,9 @@ impl AllocRegion {
         }
     }
 
-    unsafe fn init(&self, begin: usize, end: usize) {
-        let begin_aligned = align_up(begin, PGSIZE);
-        let end_aligned = align_down(end, PGSIZE);
+    unsafe fn init(&self, begin: PhysAddr, end: PhysAddr) {
+        let begin_aligned = align_up(begin);
+        let end_aligned = align_down(end);
 
         let mut head: Option<NonNull<FreePage>> = None;
         let mut count = 0usize;
@@ -95,7 +89,7 @@ impl AllocRegion {
         Some(p)
     }
 
-    fn free(&self, addr: usize) {
+    fn free(&self, addr: PhysAddr) {
         let b = *self.bounds.get().expect("region not initialized");
         if addr < b.begin || addr >= b.end || addr % PGSIZE != 0 {
             panic!("pmem_free: address {:#x} out of bounds [{:#x}, {:#x}]", addr, b.begin, b.end);
@@ -117,8 +111,8 @@ static USER_REGION: AllocRegion = AllocRegion::new();
 
 #[derive(Clone, Copy, Debug)]
 pub struct RegionInfo {
-    pub begin: usize,
-    pub end: usize,
+    pub begin: PhysAddr,
+    pub end: PhysAddr,
     pub allocable: usize,
 }
 
@@ -140,7 +134,7 @@ pub fn pmem_try_alloc(for_kernel: bool) -> Option<*mut u8> {
     allocate_page(for_kernel)
 }
 
-pub fn pmem_free(addr: usize, for_kernel: bool) {
+pub fn pmem_free(addr: PhysAddr, for_kernel: bool) {
     region(for_kernel).free(addr);
 }
 
@@ -157,15 +151,11 @@ fn allocate_page(for_kernel: bool) -> Option<*mut u8> {
 }
 
 fn region(for_kernel: bool) -> &'static AllocRegion {
-    if for_kernel {
-        &KERNEL_REGION
-    } else {
-        &USER_REGION
-    }
+    if for_kernel { &KERNEL_REGION } else { &USER_REGION }
 }
 
 pub fn initialize_regions() {
-    let kernel_end = align_up(addr_of_mut!(__bss_end) as usize, PGSIZE);
+    let kernel_end = align_up(addr_of_mut!(__bss_end) as PhysAddr);
 
     let mem_range = dtb::memory_range()
         .unwrap_or_else(|| dtb::MemoryRange { start: 0x8000_0000, size: 128 * 1024 * 1024 });
@@ -187,7 +177,7 @@ pub fn initialize_regions() {
     let alloc_end = mem_end;
     let total_free = alloc_end.saturating_sub(alloc_begin);
 
-    let mut kernel_split = align_up(alloc_begin + total_free / 2, PGSIZE);
+    let mut kernel_split = align_up(alloc_begin + total_free / 2);
     if kernel_split > alloc_end {
         kernel_split = alloc_end;
     }

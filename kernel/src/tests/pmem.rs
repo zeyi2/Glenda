@@ -8,8 +8,8 @@ use core::sync::atomic::{
 
 use crate::dtb;
 use crate::init;
+use crate::mem::addr::{PGSIZE, PhysAddr, VirtAddr};
 use crate::mem::pmem;
-use crate::mem::pmem::PGSIZE;
 use crate::printk;
 use crate::printk::{ANSI_GREEN, ANSI_RED, ANSI_RESET, ANSI_YELLOW};
 
@@ -32,7 +32,7 @@ impl HartSlotTable {
         Self { slots: UnsafeCell::new([[0; MAX_TRACKED_PAGES]; MAX_HARTS]) }
     }
     #[inline]
-    fn store(&self, hart: usize, idx: usize, value: usize) {
+    fn store(&self, hart: usize, idx: usize, value: PhysAddr) {
         unsafe {
             (*self.slots.get())[hart][idx] = value;
         }
@@ -108,7 +108,7 @@ fn kernel_concurrent_alloc_test(hartid: usize) {
     }
 
     for slot in 0..pages_per_hart {
-        let page = pmem::pmem_alloc(true) as usize;
+        let page = pmem::pmem_alloc(true) as PhysAddr;
         unsafe {
             core::ptr::write_bytes(page as *mut u8, hartid as u8 + 1, PGSIZE);
         }
@@ -162,7 +162,7 @@ fn user_region_validation() {
     let pages_to_use = cmp::min(TEST_CNT, allocable_before);
 
     for idx in 0..pages_to_use {
-        let page = pmem::pmem_alloc(false) as usize;
+        let page = pmem::pmem_alloc(false) as PhysAddr;
         pages[idx] = page;
         unsafe {
             core::ptr::write_bytes(page as *mut u8, 0xAA, PGSIZE);
@@ -182,7 +182,7 @@ fn user_region_validation() {
 
     let mut zero_verified = true;
     for idx in 0..pages_to_use {
-        let page = pmem::pmem_alloc(false) as usize;
+        let page = pmem::pmem_alloc(false) as PhysAddr;
         pages[idx] = page;
         zero_verified &= is_zeroed(page);
     }
