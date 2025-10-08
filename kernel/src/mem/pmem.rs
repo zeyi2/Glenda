@@ -10,7 +10,6 @@ use super::addr::{PhysAddr, align_down, align_up};
 use crate::dtb;
 use crate::mem::KERN_PAGES;
 use crate::printk;
-use crate::printk::{ANSI_RED, ANSI_RESET};
 
 unsafe extern "C" {
     static mut __bss_end: u8;

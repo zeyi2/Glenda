@@ -1,4 +1,4 @@
-use crate::mem::vm::{init_kernel_vm, switch_to_kernel_vm};
+use crate::mem::vm::{init_kernel_vm, vm_switch_to_kernel};
 use crate::printk;
 use spin::Once;
 
@@ -10,6 +10,6 @@ pub fn vm_init(hartid: usize) {
         printk!("VM: Root page table built by hart {}", hartid);
     });
 
-    switch_to_kernel_vm();
+    vm_switch_to_kernel();
     printk!("VM: Hart {} switched to kernel page table", hartid);
 }

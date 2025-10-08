@@ -6,7 +6,7 @@ use core::panic;
 use super::addr::{PhysAddr, VirtAddr, align_down, align_up, vpn};
 use super::pmem::{kernel_region_info, pmem_alloc, pmem_free, user_region_info};
 use super::pte::{PTE_A, PTE_D, PTE_R, PTE_V, PTE_W, PTE_X, Pte};
-use super::pte::{pa_to_pte, pte_get_flags, pte_is_leaf, pte_is_table, pte_is_valid, pte_to_pa};
+use super::pte::{pa_to_pte, pte_is_leaf, pte_is_valid, pte_to_pa};
 use super::{PGNUM, PGSIZE, VA_MAX};
 use crate::dtb;
 use crate::printk;
@@ -293,10 +293,17 @@ pub fn init_kernel_vm() {
     // vm_mappages(&KERNEL_PAGE_TABLE, mem_range.start, mem_range.size, mem_range.start, PTE_R | PTE_W);
 }
 
-pub fn switch_to_kernel_vm() {
+pub fn vm_switch_to_kernel() {
     let root_pa = (&KERNEL_PAGE_TABLE as *const PageTable) as usize;
     unsafe {
         asm!("csrw satp, {}", in(reg) make_satp(root_pa >> 12));
+        asm!("sfence.vma zero, zero");
+    }
+}
+
+pub fn vm_switch_off() {
+    unsafe {
+        asm!("csrw satp, zero");
         asm!("sfence.vma zero, zero");
     }
 }
