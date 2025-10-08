@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use crate::dtb;
 use crate::printk;
-use crate::printk::{ANSI_BLUE, ANSI_GREEN, ANSI_RED, ANSI_RESET, ANSI_YELLOW};
+use crate::printk::{ANSI_BLUE, ANSI_GREEN, ANSI_RESET, ANSI_YELLOW};
 use spin::Mutex;
 
 const INCREMENTS_PER_HART: usize = 16;
@@ -63,21 +63,16 @@ pub fn run(hartid: usize) {
     if result == harts_under_test {
         let expected = harts_under_test * INCREMENTS_PER_HART;
         let final_value = GLOBAL_COUNTER.load(Ordering::SeqCst);
-        if final_value == expected {
-            printk!(
-                "{}[PASS]{} Spinlock test: counter reached {}",
-                ANSI_GREEN,
-                ANSI_RESET,
-                final_value
-            );
-        } else {
-            printk!(
-                "{}[FAIL]{} Spinlock test: counter {} (expected {})",
-                ANSI_RED,
-                ANSI_RESET,
-                final_value,
-                expected
-            );
-        }
+        assert_eq!(
+            final_value, expected,
+            "Spinlock test: counter mismatch (expected {}, got {})",
+            expected, final_value
+        );
+        printk!(
+            "{}[PASS]{} Spinlock test: counter reached {}",
+            ANSI_GREEN,
+            ANSI_RESET,
+            final_value
+        );
     }
 }
