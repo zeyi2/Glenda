@@ -13,6 +13,7 @@ pub const PTE_D: usize = 1 << 7; // Dirty
 
 pub type Pte = usize;
 pub type PteFlags = usize;
+
 #[inline(always)]
 pub const fn pte_set_ppn(pte: Pte, ppn: usize) -> Pte {
     (pte & 0x3FF) | (ppn << 10)
@@ -34,13 +35,19 @@ pub const fn pte_get_flags(pte: Pte) -> PteFlags {
 }
 
 #[inline(always)]
-pub const fn pte_check(pte: Pte) -> bool {
-    pte & (PTE_R | PTE_W | PTE_X) != 0
+pub const fn pte_is_valid(pte: Pte) -> bool {
+    (pte & PTE_V) != 0
 }
 
 #[inline(always)]
-pub const fn pte_is_valid(pte: Pte) -> bool {
-    pte & PTE_V != 0
+pub const fn pte_is_leaf(pte: Pte) -> bool {
+    (pte & (PTE_R | PTE_W | PTE_X)) != 0
+}
+
+// 中间页表条目：有效但不是 leaf
+#[inline(always)]
+pub const fn pte_is_table(pte: Pte) -> bool {
+    pte_is_valid(pte) && !pte_is_leaf(pte)
 }
 
 #[inline(always)]

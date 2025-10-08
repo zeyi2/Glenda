@@ -5,8 +5,8 @@ use core::panic;
 
 use super::addr::{PhysAddr, VirtAddr, align_down, align_up, vpn};
 use super::pmem::{pmem_alloc, pmem_free};
-use super::pte::{PTE_V, Pte};
-use super::pte::{pa_to_pte, pte_check, pte_is_valid, pte_to_pa};
+use super::pte::{PTE_V, Pte, pa_to_pte, pte_is_leaf, pte_is_valid, pte_to_pa};
+use super::pte::{pte_get_flags, pte_is_table};
 use super::{PGNUM, PGSIZE, VA_MAX};
 use crate::printk;
 
@@ -23,15 +23,23 @@ unsafe impl Sync for PageTable {}
 static KERNEL_PAGE_TABLE: PageTable = PageTable { entries: [0; PGNUM] };
 
 impl PageTable {
+    // walk: 只支持 4KB 页；中间层遇到 leaf(=大页) 视为错误返回 None
     fn walk(&self, va: VirtAddr, alloc: bool) -> Option<*mut Pte> {
         if va >= VA_MAX {
             return None;
         }
         let mut table = self as *const PageTable as *mut PageTable;
+        // 访问顺序：L2 -> L1，最后返回 L0 的 PTE 指针
         for level in (1..3).rev() {
-            let pte = unsafe { &mut (*table).entries[vpn(va)[level]] };
-            if pte_is_valid(*pte) {
-                table = pte_to_pa(*pte) as *mut PageTable;
+            let idx = vpn(va)[level];
+            let pte_ref = unsafe { &mut (*table).entries[idx] };
+            if pte_is_valid(*pte_ref) {
+                if pte_is_leaf(*pte_ref) {
+                    // 不支持大页
+                    return None;
+                }
+                // 进入下一层表
+                table = pte_to_pa(*pte_ref) as *mut PageTable;
             } else {
                 if !alloc {
                     return None;
@@ -42,13 +50,14 @@ impl PageTable {
                 }
                 unsafe {
                     core::ptr::write_bytes(new_table as *mut u8, 0, PGSIZE);
-                    *pte = (new_table as usize >> 12) << 10 | PTE_V;
-                    table = new_table;
+                    *pte_ref = pa_to_pte(new_table as usize, PTE_V); // 仅 V 置位表示中间层
                 }
+                table = new_table;
             }
         }
         Some(unsafe { &mut (*table).entries[vpn(va)[0]] as *mut Pte })
     }
+
     fn map(&self, va: VirtAddr, pa: PhysAddr, len: usize, flags: usize) -> bool {
         if len == 0 {
             return false;
@@ -56,54 +65,58 @@ impl PageTable {
         let start = align_down(va);
         let end = align_up(va + len);
         let mut a = start;
-        let mut pa = align_down(pa);
+        let mut pa_cur = align_down(pa);
         let last = end - PGSIZE;
         while a <= last {
             let pte = match self.walk(a, true) {
-                Some(pte) => pte,
-                None => {
-                    return false;
-                }
+                Some(p) => p,
+                None => return false,
             };
-            if pte_is_valid(unsafe { *pte }) {
-                printk!("vm_map: remap va {:#x}", a);
-                return false;
-            }
-            unsafe {
-                *pte = pa_to_pte(pa, flags | PTE_V);
+            let cur = unsafe { *pte };
+            if pte_is_valid(cur) {
+                // 已存在映射：允许对同一物理页更新权限；若物理页不同则视为冲突
+                if !pte_is_leaf(cur) || pte_to_pa(cur) != pa_cur {
+                    return false; // 冲突或结构错误
+                }
+                unsafe {
+                    *pte = pa_to_pte(pa_cur, flags | PTE_V);
+                }
+            } else {
+                unsafe {
+                    *pte = pa_to_pte(pa_cur, flags | PTE_V);
+                }
             }
             if a == last {
                 break;
             }
             a += PGSIZE;
-            pa += PGSIZE;
+            pa_cur += PGSIZE;
         }
         true
     }
+
     fn unmap(&self, va: VirtAddr, len: usize, free: bool) -> bool {
+        if len == 0 {
+            return false;
+        }
         let start = align_down(va);
         let end = align_up(va + len);
         let mut a = start;
         let last = end - PGSIZE;
         while a <= last {
             let pte = match self.walk(a, false) {
-                Some(pte) => pte,
-                None => {
-                    return false;
-                }
+                Some(p) => p,
+                None => return false,
             };
-            let pa = pte_to_pa(unsafe { *pte });
-            if !pte_is_valid(unsafe { *pte }) {
-                printk!("vm_unmap: not mapped va {:#x}", a);
+            let old = unsafe { *pte };
+            if !pte_is_valid(old) || !pte_is_leaf(old) {
                 return false;
             }
-            if pte_check(unsafe { *pte }) {
-                printk!("vm_unmap: pte points to a page table va {:#x}", a);
-                return false;
-            }
+            let pa = pte_to_pa(old);
             if free {
                 pmem_free(pa, true);
             }
+            unsafe { *pte = 0 }; // 清除映射
             if a == last {
                 break;
             }
@@ -115,28 +128,20 @@ impl PageTable {
 
 pub fn vm_getpte(table: &PageTable, va: VirtAddr) -> *mut Pte {
     match table.walk(va, false) {
-        Some(pte) => pte,
-        None => {
-            panic!("vm_getpte: failed to get PTE for VA {:#x}", va);
-        }
+        Some(p) => p,
+        None => panic!("vm_getpte: failed for VA {:#x}", va),
     }
 }
 
 pub fn vm_mappages(table: &PageTable, va: VirtAddr, size: usize, pa: PhysAddr, perm: usize) {
-    match table.map(va, pa, size, perm | PTE_V) {
-        true => {}
-        false => {
-            panic!("vm_mappages: failed to map VA {:#x} to PA {:#x}", va, pa);
-        }
+    if !table.map(va, pa, size, perm) {
+        panic!("vm_mappages: failed map VA {:#x} -> PA {:#x}", va, pa);
     }
 }
 
 pub fn vm_unmappages(table: &PageTable, va: VirtAddr, size: usize, free: bool) {
-    match table.unmap(va, size, free) {
-        true => {}
-        false => {
-            panic!("vm_unmappages: failed to unmap VA {:#x}", va);
-        }
+    if !table.unmap(va, size, free) {
+        panic!("vm_unmappages: failed unmap VA {:#x}", va);
     }
 }
 
@@ -196,9 +201,9 @@ fn make_satp(ppn: usize) -> usize {
 }
 
 pub fn init_kernel_vm() {}
+
 pub fn switch_to_kernel_vm() {
     let root_pa = (&KERNEL_PAGE_TABLE as *const PageTable) as usize;
-
     unsafe {
         asm!("csrw satp, {}", in(reg) make_satp(root_pa >> 12));
         asm!("sfence.vma zero, zero");
