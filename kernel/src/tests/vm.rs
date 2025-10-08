@@ -1,20 +1,31 @@
-use crate::mem::addr::{PhysAddr, VirtAddr};
+use super::barrier::MultiCoreTestBarrier;
+use crate::dtb;
+use crate::mem::addr::PhysAddr;
 use crate::mem::pmem::{pmem_alloc, pmem_free};
-use crate::mem::pte::{
-    PTE_R, PTE_U, PTE_V, PTE_W, PTE_X, PteFlags, pa_to_pte, pte_get_flags, pte_is_valid, pte_to_pa,
-};
+use crate::mem::pte::{PTE_R, PTE_W, PTE_X, pte_get_flags, pte_is_valid, pte_to_pa};
 use crate::mem::vm::{PageTable, vm_getpte, vm_mappages, vm_print, vm_unmappages};
 use crate::mem::{PGSIZE, VA_MAX};
 use crate::printk;
 use crate::printk::{ANSI_GREEN, ANSI_RESET, ANSI_YELLOW};
 
+static VM_BARRIER: MultiCoreTestBarrier = MultiCoreTestBarrier::new();
+
 pub fn run(hartid: usize) {
-    printk!("{}[TEST]{} VM test started on hart {})", ANSI_YELLOW, ANSI_RESET, hartid);
+    if hartid == 0 {
+        VM_BARRIER.init(dtb::hart_count());
+        printk!("{}[TEST]{} VM test start ({} harts)", ANSI_YELLOW, ANSI_RESET, VM_BARRIER.total());
+    }
+    while VM_BARRIER.total() == 0 {}
+    // 第一阶段：只在 hart0 运行功能测试，其它 hart 等待开始栅栏
+    VM_BARRIER.wait_start();
     if hartid == 0 {
         vm_func_test();
     }
-    vm_mapping_test();
-    printk!("{}[PASS]{} VM test", ANSI_GREEN, ANSI_RESET);
+    // 第二阶段：所有 hart 做映射测试
+    vm_mapping_test(hartid);
+    if VM_BARRIER.finish_and_last() {
+        printk!("{}[PASS]{} VM test ({} harts)", ANSI_GREEN, ANSI_RESET, VM_BARRIER.total());
+    }
 }
 
 fn vm_func_test() {
@@ -60,10 +71,13 @@ fn vm_func_test() {
         pmem_free(page, false);
     }
     pmem_free(test_pgtbl as usize, true);
+    printk!("{}vm_func_test passed!{}", ANSI_GREEN, ANSI_RESET);
 }
 
-fn vm_mapping_test() {
-    printk!("--- vm_mapping_test ---");
+fn vm_mapping_test(hartid: usize) {
+    if hartid == 0 {
+        printk!("--- vm_mapping_test ---");
+    }
 
     // 1. 初始化测试页表
     // pmem_alloc 已经将内存清零
@@ -80,9 +94,13 @@ fn vm_mapping_test() {
     assert!(pa_2 != 0, "vm_mapping_test: pa_2 alloc failed");
 
     // 3. 建立映射
-    printk!("Mapping VA {:#x} -> PA {:#x} (R W)", va_1, pa_1);
+    if hartid == 0 {
+        printk!("Mapping VA {:#x} -> PA {:#x} (R W)", va_1, pa_1);
+    }
     vm_mappages(table, va_1, PGSIZE, pa_1, PTE_R | PTE_W);
-    printk!("Mapping VA {:#x} -> PA {:#x} (R)", va_2, pa_2);
+    if hartid == 0 {
+        printk!("Mapping VA {:#x} -> PA {:#x} (R W X)", va_2, pa_2);
+    }
     vm_mappages(table, va_2, PGSIZE, pa_2, PTE_R | PTE_W | PTE_X);
 
     // 4. 验证映射结果
@@ -111,9 +129,13 @@ fn vm_mapping_test() {
 
     // 5. 解除映射
     // vm_unmappages 会释放 pa_1 和 pa_2
-    printk!("Unmapping VA {:#x}", va_1);
+    if hartid == 0 {
+        printk!("Unmapping VA {:#x}", va_1);
+    }
     vm_unmappages(table, va_1, PGSIZE, true);
-    printk!("Unmapping VA {:#x}", va_2);
+    if hartid == 0 {
+        printk!("Unmapping VA {:#x}", va_2);
+    }
     vm_unmappages(table, va_2, PGSIZE, true);
 
     // 6. 验证解除映射结果
@@ -130,5 +152,7 @@ fn vm_mapping_test() {
     // 7. 清理页表
     pmem_free(pgtbl as usize, true);
 
-    printk!("vm_mapping_test passed!");
+    if hartid == 0 {
+        printk!("{}vm_mapping_test passed!{}", ANSI_GREEN, ANSI_RESET);
+    }
 }
