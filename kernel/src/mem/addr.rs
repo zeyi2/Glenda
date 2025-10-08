@@ -7,18 +7,6 @@ pub type VPN = usize;
 
 use super::{PGMASK, PGSIZE};
 
-unsafe extern "C" {
-    pub static mut __text_start: u8;
-    pub static mut __text_end: u8;
-    pub static mut __rodata_start: u8;
-    pub static mut __rodata_end: u8;
-    pub static mut __data_start: u8;
-    pub static mut __data_end: u8;
-    pub static mut __bss_start: u8;
-    pub static mut __bss_end: u8;
-    pub static mut __alloc_start: u8;
-}
-
 #[inline(always)]
 pub const fn align_up(value: usize) -> usize {
     debug_assert!(PGSIZE.is_power_of_two());

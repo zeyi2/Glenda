@@ -1,17 +1,21 @@
 #![allow(dead_code)]
 
 use core::cell::OnceCell;
-use core::cmp;
 use core::ptr::{self, NonNull, addr_of_mut};
 
 use spin::Mutex;
 
 use super::PGSIZE;
-use super::addr::{__alloc_start, __bss_end, PhysAddr, align_down, align_up};
+use super::addr::{PhysAddr, align_down, align_up};
 use crate::dtb;
 use crate::mem::KERN_PAGES;
 use crate::printk;
 use crate::printk::{ANSI_RED, ANSI_RESET};
+
+unsafe extern "C" {
+    static mut __bss_end: u8;
+    static mut __alloc_start: u8;
+}
 
 #[repr(C)]
 struct FreePage {
@@ -164,14 +168,7 @@ pub fn initialize_regions(hartid: usize) {
     let mem_end = mem_range.start + mem_range.size;
 
     if kernel_end >= mem_end {
-        printk!(
-            "{}PMEM init failed{}: kernel end {:#x} beyond memory end {:#x}",
-            ANSI_RED,
-            ANSI_RESET,
-            kernel_end,
-            mem_end
-        );
-        panic!("pmem_init: kernel overlaps physical memory end");
+        panic!("pmem_init: kernel end {:#x} beyond memory end {:#x}", kernel_end, mem_end);
     }
 
     let alloc_begin = addr_of_mut!(__alloc_start) as PhysAddr;
