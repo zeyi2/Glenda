@@ -153,7 +153,7 @@ pub fn vm_print(table: &PageTable) {
             continue;
         }
         if !pte_check(pte) {
-            panic!("vm_print: invalid PTE at level 2 {}", pte);
+            panic!("vm_print: invalid PTE at level 2 {:#x}", pte);
         }
         let level1 = pte_to_pa(pte) as *const PageTable;
         printk!("   L2 {:3} PTE {:016x} -> {:p}\n", i, pte, level1);
@@ -163,7 +163,7 @@ pub fn vm_print(table: &PageTable) {
                 continue;
             }
             if !pte_check(level0) {
-                panic!("vm_print: invalid PTE at level 1 {}", level0);
+                panic!("vm_print: invalid PTE at level 1 {:#x}", level0);
             }
             let level0_pa = pte_to_pa(level0) as *const PageTable;
             printk!("       L1 {:3} PTE {:016x} -> {:p}\n", j, level0, level0_pa);
@@ -173,7 +173,7 @@ pub fn vm_print(table: &PageTable) {
                     continue;
                 }
                 if !pte_check(pte) {
-                    panic!("vm_print: invalid PTE at level 0 {}", pte);
+                    panic!("vm_print: invalid PTE at level 0 {:#x}", pte);
                 }
                 let pa = pte_to_pa(pte);
                 let va = (i << 30) | (j << 21) | (k << 12);

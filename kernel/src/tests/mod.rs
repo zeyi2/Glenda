@@ -7,6 +7,7 @@ pub fn run_tests(hartid: usize) {
     run_spinlock_tests(hartid);
     run_printk_tests(hartid);
     run_pmem_tests(hartid);
+    run_vm_tests(hartid);
 }
 
 fn run_spinlock_tests(hartid: usize) {
