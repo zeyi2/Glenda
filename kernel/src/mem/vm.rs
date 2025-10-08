@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use core::arch::asm;
+use core::cmp::max;
 use core::panic;
 
 use super::addr::{PhysAddr, VirtAddr, align_down, align_up, vpn};
@@ -230,7 +231,7 @@ fn make_satp(ppn: usize) -> usize {
 }
 
 pub fn init_kernel_vm() {
-    // 权限映射, PTE_A/D 理论上硬件会帮忙做，但我不确定 QEMU Virt 的具体行为，所以还是加上
+    // 权限映射, PTE_A/D 理论上硬件会帮忙做，但不确定 QEMU Virt 的具体行为，所以还是加上
     let text_start_addr = unsafe { &__text_start as *const u8 as usize };
     let text_end_addr = unsafe { &__text_end as *const u8 as usize };
     printk!("VM: Map .text {:p}..{:p}", text_start_addr as *const u8, text_end_addr as *const u8);
@@ -285,12 +286,20 @@ pub fn init_kernel_vm() {
     printk!("VM: Map UART @ {:p}", uart_base as *const u8);
     vm_mappages(&KERNEL_PAGE_TABLE, uart_base, uart_size, uart_base, PTE_R | PTE_W | PTE_A | PTE_D);
 
-    // 物理内存映射 (buggy, 后面按 alloc 按需分配吧)
-    // let mem_range = dtb::memory_range().unwrap_or(dtb::MemoryRange {
-    //     start: 0x80000000,
-    //     size: 128 * 1024 * 1024,
-    // });
-    // vm_mappages(&KERNEL_PAGE_TABLE, mem_range.start, mem_range.size, mem_range.start, PTE_R | PTE_W);
+    // 内核的物理页分配池
+    let kernel_info = kernel_region_info();
+    let map_start = align_down(max(kernel_info.begin, align_up(bss_end_addr)));
+    let map_end = align_up(kernel_info.end);
+    if map_start < map_end {
+        printk!("VM: Map kernel pool {:p}..{:p}", map_start as *const u8, map_end as *const u8);
+        vm_mappages(
+            &KERNEL_PAGE_TABLE,
+            map_start,
+            map_end - map_start,
+            map_start,
+            PTE_R | PTE_W | PTE_A | PTE_D,
+        );
+    }
 }
 
 pub fn vm_switch_to_kernel() {

@@ -3,7 +3,7 @@
 use core::cell::OnceCell;
 use core::ptr::{self, NonNull, addr_of_mut};
 
-use spin::Mutex;
+use spin::{Mutex, Once};
 
 use super::PGSIZE;
 use super::addr::{PhysAddr, align_down, align_up};
@@ -14,6 +14,12 @@ use crate::printk;
 unsafe extern "C" {
     static mut __bss_end: u8;
     static mut __alloc_start: u8;
+}
+
+static PMEM_INIT: Once<()> = Once::new();
+
+pub fn initialize_regions(hartid: usize) {
+    PMEM_INIT.call_once(|| unsafe { _init_inner(hartid) });
 }
 
 #[repr(C)]
@@ -46,6 +52,10 @@ impl AllocRegion {
             bounds: OnceCell::new(),
             inner: Mutex::new(RegionInner { head: None, allocable: 0 }),
         }
+    }
+
+    fn contains(&self, addr: PhysAddr) -> bool {
+        if let Some(b) = self.bounds.get() { addr >= b.begin && addr < b.end } else { false }
     }
 
     unsafe fn init(&self, begin: PhysAddr, end: PhysAddr) {
@@ -139,8 +149,14 @@ pub fn pmem_try_alloc(for_kernel: bool) -> Option<*mut u8> {
     allocate_page(for_kernel)
 }
 
-pub fn pmem_free(addr: PhysAddr, for_kernel: bool) {
-    region(for_kernel).free(addr);
+pub fn pmem_free(addr: PhysAddr, _for_kernel: bool) {
+    if KERNEL_REGION.contains(addr) {
+        KERNEL_REGION.free(addr);
+    } else if USER_REGION.contains(addr) {
+        USER_REGION.free(addr);
+    } else {
+        panic!("pmem_free: address {:#x} out of all regions", addr);
+    }
 }
 
 pub fn kernel_region_info() -> RegionInfo {
@@ -159,7 +175,7 @@ fn region(for_kernel: bool) -> &'static AllocRegion {
     if for_kernel { &KERNEL_REGION } else { &USER_REGION }
 }
 
-pub fn initialize_regions(hartid: usize) {
+unsafe fn _init_inner(hartid: usize) {
     let kernel_end = align_up(addr_of_mut!(__bss_end) as PhysAddr);
 
     let mem_range = dtb::memory_range()
@@ -171,6 +187,9 @@ pub fn initialize_regions(hartid: usize) {
     }
 
     let alloc_begin = addr_of_mut!(__alloc_start) as PhysAddr;
+    debug_assert!(alloc_begin >= align_up(addr_of_mut!(__bss_end) as PhysAddr));
+    debug_assert_eq!(alloc_begin & (PGSIZE - 1), 0, "__alloc_start must be 4K-aligned");
+
     let alloc_end = mem_end;
     let total_free = alloc_end.saturating_sub(alloc_begin);
     printk!(
@@ -198,6 +217,10 @@ pub fn initialize_regions(hartid: usize) {
 
     let k = KERNEL_REGION.region_info();
     let u = USER_REGION.region_info();
+    debug_assert_eq!(k.begin & (PGSIZE - 1), 0);
+    debug_assert_eq!(k.end & (PGSIZE - 1), 0);
+    debug_assert_eq!(u.begin & (PGSIZE - 1), 0);
+    debug_assert_eq!(u.end & (PGSIZE - 1), 0);
 
     printk!(
         "PMEM: Initialized kernel [{:#x}, {:#x}) -> {} pages, user [{:#x}, {:#x}) -> {} pages on hart {}",
@@ -209,4 +232,10 @@ pub fn initialize_regions(hartid: usize) {
         u.allocable,
         hartid
     );
+}
+
+#[inline]
+pub fn kernel_pool_range() -> (PhysAddr, PhysAddr) {
+    let info = KERNEL_REGION.region_info();
+    (info.begin, info.end)
 }

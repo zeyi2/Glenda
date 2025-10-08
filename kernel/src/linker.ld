@@ -37,6 +37,6 @@ SECTIONS
     PROVIDE(__bss_end = .);
   }
 
-  . = ALIGN(16);
+  . = ALIGN(0x1000);
   PROVIDE(__alloc_start = .);
 }
