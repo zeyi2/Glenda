@@ -4,7 +4,7 @@ use core::arch::asm;
 use core::panic;
 
 use super::addr::{PhysAddr, VirtAddr, align_down, align_up, vpn};
-use super::pmem::{pmem_alloc, pmem_free};
+use super::pmem::{kernel_region_info, pmem_alloc, pmem_free, user_region_info};
 use super::pte::{PTE_V, Pte, pa_to_pte, pte_is_leaf, pte_is_valid, pte_to_pa};
 use super::pte::{pte_get_flags, pte_is_table};
 use super::{PGNUM, PGSIZE, VA_MAX};
@@ -114,7 +114,10 @@ impl PageTable {
             }
             let pa = pte_to_pa(old);
             if free {
-                pmem_free(pa, true);
+                match get_region(pa) {
+                    Some(for_kernel) => pmem_free(pa, for_kernel),
+                    None => panic!("vm_unmappages: PA {:#x} out of bounds", pa),
+                };
             }
             unsafe { *pte = 0 }; // 清除映射
             if a == last {
@@ -130,6 +133,18 @@ pub fn vm_getpte(table: &PageTable, va: VirtAddr) -> *mut Pte {
     match table.walk(va, false) {
         Some(p) => p,
         None => panic!("vm_getpte: failed for VA {:#x}", va),
+    }
+}
+
+fn get_region(pa: PhysAddr) -> Option<bool> {
+    let kern_region = kernel_region_info();
+    let user_region = user_region_info();
+    if pa >= kern_region.begin && pa < kern_region.end {
+        return Some(true);
+    } else if pa >= user_region.begin && pa < user_region.end {
+        return Some(false);
+    } else {
+        return None;
     }
 }
 

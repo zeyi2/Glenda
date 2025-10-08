@@ -10,19 +10,30 @@ SECTIONS
   . = 0x80200000;
 
   .text : ALIGN(4) {
+    PROVIDE(__text_start = .);
     KEEP(*(.text.start))
     *(.text .text.*)
+    PROVIDE(__text_end = .);
   }
 
-  .rodata : ALIGN(16) { *(.rodata .rodata.*) }
+  .rodata : ALIGN(16) {
+    PROVIDE(__rodata_start = .);
+     *(.rodata .rodata.*)
+    PROVIDE(__rodata_end = .);
+  }
 
-  .data : ALIGN(16) { *(.sdata .sdata.* .data .data.*) }
+  .data : ALIGN(16) {
+    PROVIDE(__data_start = .);
+    *(.sdata .sdata.* .data .data.*)  
+    PROVIDE(__data_end = .);
+  }
 
   .bss : ALIGN(16) {
-    __bss_start = .;
+    PROVIDE(__bss_start = .);
     *(.sbss .sbss.* .bss .bss.* COMMON)
-    __bss_end = .;
+    PROVIDE(__bss_end = .);
   }
 
   . = ALIGN(16);
+  PROVIDE(__alloc_start = .);
 }

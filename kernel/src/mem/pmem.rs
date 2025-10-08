@@ -7,8 +7,9 @@ use core::ptr::{self, NonNull, addr_of_mut};
 use spin::Mutex;
 
 use super::PGSIZE;
-use super::addr::{__bss_end, PhysAddr, align_down, align_up};
+use super::addr::{__alloc_start, __bss_end, PhysAddr, align_down, align_up};
 use crate::dtb;
+use crate::mem::KERN_PAGES;
 use crate::printk;
 use crate::printk::{ANSI_BLUE, ANSI_RED, ANSI_RESET};
 
@@ -160,7 +161,6 @@ pub fn initialize_regions(hartid: usize) {
 
     let mem_range = dtb::memory_range()
         .unwrap_or_else(|| dtb::MemoryRange { start: 0x8000_0000, size: 128 * 1024 * 1024 });
-    let mem_start = mem_range.start;
     let mem_end = mem_range.start + mem_range.size;
 
     if kernel_end >= mem_end {
@@ -174,11 +174,20 @@ pub fn initialize_regions(hartid: usize) {
         panic!("pmem_init: kernel overlaps physical memory end");
     }
 
-    let alloc_begin = cmp::max(kernel_end, mem_start);
+    let alloc_begin = addr_of_mut!(__alloc_start) as PhysAddr;
     let alloc_end = mem_end;
     let total_free = alloc_end.saturating_sub(alloc_begin);
+    printk!(
+        "PMEM: physical memory [{:#x}, {:#x}) -> {} MiB, free [{:#x}, {:#x}) -> {} MiB",
+        mem_range.start,
+        mem_end,
+        mem_range.size / (1024 * 1024),
+        alloc_begin,
+        alloc_end,
+        total_free / (1024 * 1024)
+    );
 
-    let mut kernel_split = align_up(alloc_begin + total_free / 2);
+    let mut kernel_split = align_up(alloc_begin + KERN_PAGES * PGSIZE);
     if kernel_split > alloc_end {
         kernel_split = alloc_end;
     }
