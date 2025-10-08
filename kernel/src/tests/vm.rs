@@ -22,7 +22,7 @@ fn vm_func_test() {
     if test_pgtbl.is_null() {
         panic!("vm_func_test: failed to allocate page table");
     }
-    let mut mem: [usize; 5] = [0; 5];
+    let mut mem: [PhysAddr; 5] = [0; 5];
     for i in 0..5 {
         let page = pmem_alloc(false);
         if page.is_null() {
@@ -31,18 +31,27 @@ fn vm_func_test() {
         mem[i] = page as usize;
     }
 
-    printk!("\n--- vm_func_test: test 1 ---\n\n");
+    printk!("--- vm_func_test: test 1 ---");
     let table = unsafe { &*test_pgtbl };
+    printk!("Mapped VA 0x0 -> PA {:#x} (R)", mem[0]);
     vm_mappages(table, 0, PGSIZE, mem[0], PTE_R);
+    printk!("Mapped VA 0x{:#x} -> PA {:#x} (R W)", PGSIZE * 10, mem[1]);
     vm_mappages(table, PGSIZE * 10, PGSIZE, mem[1], PTE_R | PTE_W);
+    printk!("Mapped VA 0x{:#x} -> PA {:#x} (R X)", PGSIZE * 512, mem[2]);
     vm_mappages(table, PGSIZE * 512, PGSIZE, mem[2], PTE_R | PTE_X);
+    printk!("Mapped VA 0x{:#x} -> PA {:#x} (R X)", PGSIZE * 512 * 512, mem[3]);
     vm_mappages(table, PGSIZE * 512 * 512, PGSIZE, mem[3], PTE_R | PTE_X);
+    printk!("Mapped VA 0x{:#x} -> PA {:#x} (W)", VA_MAX - PGSIZE, mem[4]);
     vm_mappages(table, VA_MAX - PGSIZE, PGSIZE, mem[4], PTE_W);
+    printk!("Page table after mapping:");
     vm_print(table);
 
-    printk!("\n--- vm_func_test: test 2 ---\n\n");
+    printk!("--- vm_func_test: test 2 ---");
+    printk!("Mapped VA 0x0 -> PA {:#x} (W)", mem[0]);
     vm_mappages(table, 0, PGSIZE, mem[0], PTE_W);
+    printk!("Unmapped VA 0x{:#x}", PGSIZE * 10);
     vm_unmappages(table, PGSIZE * 10, PGSIZE, true);
+    printk!("Unmapped VA 0x{:#x}", PGSIZE * 512 * 512);
     vm_unmappages(table, PGSIZE * 512, PGSIZE, true);
     vm_print(table);
 
@@ -54,7 +63,7 @@ fn vm_func_test() {
 }
 
 fn vm_mapping_test() {
-    printk!("\n--- vm_mapping_test ---\n\n");
+    printk!("--- vm_mapping_test ---");
 
     // 1. 初始化测试页表
     // pmem_alloc 已经将内存清零
@@ -71,8 +80,10 @@ fn vm_mapping_test() {
     assert!(pa_2 != 0, "vm_mapping_test: pa_2 alloc failed");
 
     // 3. 建立映射
+    printk!("Mapping VA {:#x} -> PA {:#x} (R W)", va_1, pa_1);
     vm_mappages(table, va_1, PGSIZE, pa_1, PTE_R | PTE_W);
-    vm_mappages(table, va_2, PGSIZE, pa_2, PTE_R);
+    printk!("Mapping VA {:#x} -> PA {:#x} (R)", va_2, pa_2);
+    vm_mappages(table, va_2, PGSIZE, pa_2, PTE_R | PTE_W | PTE_X);
 
     // 4. 验证映射结果
     let pte_1_ptr = vm_getpte(table, va_1);
@@ -92,7 +103,9 @@ fn vm_mapping_test() {
 
     // 5. 解除映射
     // vm_unmappages 会释放 pa_1 和 pa_2
+    printk!("Unmapping VA {:#x}", va_1);
     vm_unmappages(table, va_1, PGSIZE, true);
+    printk!("Unmapping VA {:#x}", va_2);
     vm_unmappages(table, va_2, PGSIZE, true);
 
     // 6. 验证解除映射结果
@@ -109,5 +122,5 @@ fn vm_mapping_test() {
     // 7. 清理页表
     pmem_free(pgtbl as usize, true);
 
-    printk!("vm_mapping_test passed!\n");
+    printk!("vm_mapping_test passed!");
 }
