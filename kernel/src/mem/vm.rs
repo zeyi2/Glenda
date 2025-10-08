@@ -1,5 +1,4 @@
-#[allow(dead_code)]
-use super::addr::{PhysAddr, VirtAddr};
+#![allow(dead_code)]
 use super::pmem::{PGSIZE, pmem_alloc, pmem_free};
 use super::pte::{PTE_R, PTE_U, PTE_V, PTE_W, PTE_X, PageTable, Pte};
 use crate::printk;
