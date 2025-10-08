@@ -6,7 +6,8 @@ use core::ptr::{self, NonNull, addr_of_mut};
 
 use spin::Mutex;
 
-use super::addr::{__bss_end, PGSIZE, PhysAddr, align_down, align_up};
+use super::PGSIZE;
+use super::addr::{__bss_end, PhysAddr, align_down, align_up};
 use crate::dtb;
 use crate::printk;
 use crate::printk::{ANSI_BLUE, ANSI_RED, ANSI_RESET};

@@ -67,7 +67,7 @@ pub extern "C" fn glenda_main(hartid: usize, dtb: *const u8) -> ! {
         run_spinlock_tests(hartid);
         run_pmem_tests(hartid);
     }
-    printk!("Hart {} entering main loop", hartid);
+    printk!("{}Hart {} entering main loop{}", ANSI_BLUE, hartid, ANSI_RESET);
     loop {
         wfi();
     }
