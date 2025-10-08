@@ -7,11 +7,9 @@ use core::ptr::{self, NonNull, addr_of_mut};
 use spin::Mutex;
 
 use crate::dtb;
+use crate::mem::addr::{PGSIZE, align_down, align_up};
 use crate::printk;
 use crate::printk::{ANSI_BLUE, ANSI_RED, ANSI_RESET};
-use crate::utils::align::{align_down, align_up};
-
-pub const PGSIZE: usize = 4096;
 
 unsafe extern "C" {
     static mut __bss_end: u8;
@@ -50,8 +48,8 @@ impl AllocRegion {
     }
 
     unsafe fn init(&self, begin: usize, end: usize) {
-        let begin_aligned = align_up(begin, PGSIZE);
-        let end_aligned = align_down(end, PGSIZE);
+        let begin_aligned = align_up(begin);
+        let end_aligned = align_down(end);
 
         let mut head: Option<NonNull<FreePage>> = None;
         let mut count = 0usize;
@@ -161,16 +159,15 @@ fn region(for_kernel: bool) -> &'static AllocRegion {
 }
 
 pub fn initialize_regions() {
-    let kernel_end = align_up(addr_of_mut!(__bss_end) as usize, PGSIZE);
+    let kernel_end = align_up(addr_of_mut!(__bss_end) as usize);
 
-    let mem_range = dtb::memory_range()
-        .unwrap_or_else(|| dtb::MemoryRange { start: 0x8000_0000, size: 128 * 1024 * 1024 });
+    let mem_range = dtb::memory_range().unwrap();
     let mem_start = mem_range.start;
     let mem_end = mem_range.start + mem_range.size;
 
     if kernel_end >= mem_end {
         printk!(
-            "{}PMEM: Failed to init memory: kernel end {:#x} beyond memory end {:#x}{}",
+            "{}PMEM: Failed to init memory{}: kernel end {:#x} beyond memory end {:#x}",
             ANSI_RED,
             ANSI_RESET,
             kernel_end,
@@ -183,7 +180,7 @@ pub fn initialize_regions() {
     let alloc_end = mem_end;
     let total_free = alloc_end.saturating_sub(alloc_begin);
 
-    let mut kernel_split = align_up(alloc_begin + total_free / 2, PGSIZE);
+    let mut kernel_split = align_up(alloc_begin + total_free / 2);
     if kernel_split > alloc_end {
         kernel_split = alloc_end;
     }
