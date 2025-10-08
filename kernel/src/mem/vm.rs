@@ -142,47 +142,48 @@ pub fn vm_unmappages(table: &PageTable, va: VirtAddr, size: usize, free: bool) {
 
 #[cfg(feature = "tests")]
 pub fn vm_print(table: &PageTable) {
-    let level2 = table;
-    let mut pte: Pte;
-    printk!("Page Table at {:p}\n", level2);
+    // 打印三级页表，仅支持 4KB 页；显示每级基准 VA
+    let pgtbl_2 = table; // level-2 (root)
+    printk!("level-2 pgtbl: pa = {:p}", pgtbl_2);
     for i in 0..PGNUM {
-        use crate::mem::pte::pte_to_pa;
-
-        pte = level2.entries[i];
-        if !pte_is_valid(pte) {
+        let pte2 = pgtbl_2.entries[i];
+        if !pte_is_valid(pte2) {
             continue;
         }
-        if !pte_check(pte) {
-            panic!("vm_print: invalid PTE at level 2 {:#x}", pte);
+        if !pte_is_table(pte2) {
+            panic!("vm_print: pte check fail (1) L2 idx {} PTE {:#x}", i, pte2);
         }
-        let level1 = pte_to_pa(pte) as *const PageTable;
-        printk!("   L2 {:3} PTE {:016x} -> {:p}\n", i, pte, level1);
+        let pgtbl_1 = pte_to_pa(pte2) as *const PageTable;
+        let base_va_l2 = (i << 30) as *const u8;
+        printk!(".. level-1 pgtbl {:3} base_va = {:p} pa = {:p}", i, base_va_l2, pgtbl_1);
         for j in 0..PGNUM {
-            let level0 = unsafe { (*level1).entries[j] };
-            if !pte_is_valid(level0) {
+            let pte1 = unsafe { (*pgtbl_1).entries[j] };
+            if !pte_is_valid(pte1) {
                 continue;
             }
-            if !pte_check(level0) {
-                panic!("vm_print: invalid PTE at level 1 {:#x}", level0);
+            if !pte_is_table(pte1) {
+                panic!("vm_print: pte check fail (2) L1 idx {} PTE {:#x}", j, pte1);
             }
-            let level0_pa = pte_to_pa(level0) as *const PageTable;
-            printk!("       L1 {:3} PTE {:016x} -> {:p}\n", j, level0, level0_pa);
+            let pgtbl_0 = pte_to_pa(pte1) as *const PageTable;
+            let base_va_l1 = ((i << 30) | (j << 21)) as *const u8;
+            printk!(".. .. level-0 pgtbl {:3} base_va = {:p} pa = {:p}", j, base_va_l1, pgtbl_0);
             for k in 0..PGNUM {
-                pte = unsafe { (*level0_pa).entries[k] };
-                if !pte_is_valid(pte) {
+                let pte0 = unsafe { (*pgtbl_0).entries[k] };
+                if !pte_is_valid(pte0) {
                     continue;
                 }
-                if !pte_check(pte) {
-                    panic!("vm_print: invalid PTE at level 0 {:#x}", pte);
+                if !pte_is_leaf(pte0) {
+                    panic!("vm_print: pte check fail (3) L0 idx {} PTE {:#x}", k, pte0);
                 }
-                let pa = pte_to_pa(pte);
-                let va = (i << 30) | (j << 21) | (k << 12);
+                let pa = pte_to_pa(pte0);
+                let va = ((i << 30) | (j << 21) | (k << 12)) as *const u8;
+                let flags = pte_get_flags(pte0);
                 printk!(
-                    "           L0 {:3} PTE {:016x} -> {:p} VA {:p}\n",
+                    ".. .. .. page {:3} VA {:p} -> PA {:p} flags = {:#x}",
                     k,
-                    pte,
+                    va,
                     pa as *const u8,
-                    va as *const u8
+                    flags
                 );
             }
         }
