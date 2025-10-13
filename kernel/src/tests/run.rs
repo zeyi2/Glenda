@@ -36,5 +36,5 @@ pub fn run_tests(hartid: usize) {
     }
     // 在 test() 返回前所有 hart 打印进入主循环提示，避免因为后续输出被截断而误判未进入
     printk!("Hart {} tests done, returning to main loop", hartid);
-    vm_switch_to_kernel(); // 恢复 VM，返回内核页表
+    vm_switch_to_kernel(hartid); // 恢复 VM，返回内核页表
 }

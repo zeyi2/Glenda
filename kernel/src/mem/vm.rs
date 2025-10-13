@@ -11,6 +11,7 @@ use super::pte::{pa_to_pte, pte_get_flags, pte_is_leaf, pte_is_table, pte_is_val
 use super::{PGNUM, PGSIZE, VA_MAX};
 use crate::dtb;
 use crate::printk;
+use spin::Once;
 
 const SATP_SV39: usize = 8 << 60;
 
@@ -230,11 +231,19 @@ fn make_satp(ppn: usize) -> usize {
     SATP_SV39 | ppn
 }
 
-pub fn init_kernel_vm() {
+static INIT_KERNEL_VM: Once<()> = Once::new();
+
+pub fn init_kernel_vm(hartid: usize) {
+    INIT_KERNEL_VM.call_once(|| {
+        __init_kernel_vm(hartid);
+    });
+}
+
+fn __init_kernel_vm(hartid: usize) {
     // 权限映射, PTE_A/D 理论上硬件会帮忙做，但不确定 QEMU Virt 的具体行为，所以还是加上
     let text_start_addr = unsafe { &__text_start as *const u8 as usize };
     let text_end_addr = unsafe { &__text_end as *const u8 as usize };
-    printk!("VM: Map .text {:p}..{:p}", text_start_addr as *const u8, text_end_addr as *const u8);
+    printk!("VM: Map .text [{:p}, {:p})", text_start_addr as *const u8, text_end_addr as *const u8);
     vm_mappages(
         &KERNEL_PAGE_TABLE,
         text_start_addr,
@@ -246,7 +255,7 @@ pub fn init_kernel_vm() {
     let rodata_start_addr = unsafe { &__rodata_start as *const u8 as usize };
     let rodata_end_addr = unsafe { &__rodata_end as *const u8 as usize };
     printk!(
-        "VM: Map .rodata {:p}..{:p}",
+        "VM: Map .rodata [{:p}, {:p})",
         rodata_start_addr as *const u8,
         rodata_end_addr as *const u8
     );
@@ -260,7 +269,7 @@ pub fn init_kernel_vm() {
 
     let data_start_addr = unsafe { &__data_start as *const u8 as usize };
     let data_end_addr = unsafe { &__data_end as *const u8 as usize };
-    printk!("VM: Map .data {:p}..{:p}", data_start_addr as *const u8, data_end_addr as *const u8);
+    printk!("VM: Map .data [{:p}, {:p})", data_start_addr as *const u8, data_end_addr as *const u8);
     vm_mappages(
         &KERNEL_PAGE_TABLE,
         data_start_addr,
@@ -271,7 +280,7 @@ pub fn init_kernel_vm() {
 
     let bss_start_addr = unsafe { &__bss_start as *const u8 as usize };
     let bss_end_addr = unsafe { &__bss_end as *const u8 as usize };
-    printk!("VM: Map .bss {:p}..{:p}", bss_start_addr as *const u8, bss_end_addr as *const u8);
+    printk!("VM: Map .bss [{:p}, {:p})", bss_start_addr as *const u8, bss_end_addr as *const u8);
     vm_mappages(
         &KERNEL_PAGE_TABLE,
         bss_start_addr,
@@ -291,7 +300,7 @@ pub fn init_kernel_vm() {
     let map_start = align_down(max(kernel_info.begin, align_up(bss_end_addr)));
     let map_end = align_up(kernel_info.end);
     if map_start < map_end {
-        printk!("VM: Map kernel pool {:p}..{:p}", map_start as *const u8, map_end as *const u8);
+        printk!("VM: Map kernel pool [{:p}, {:p})", map_start as *const u8, map_end as *const u8);
         vm_mappages(
             &KERNEL_PAGE_TABLE,
             map_start,
@@ -300,14 +309,16 @@ pub fn init_kernel_vm() {
             PTE_R | PTE_W | PTE_A | PTE_D,
         );
     }
+    printk!("VM: Root page table built by hart {}", hartid);
 }
 
-pub fn vm_switch_to_kernel() {
+pub fn vm_switch_to_kernel(hartid: usize) {
     let root_pa = (&KERNEL_PAGE_TABLE as *const PageTable) as usize;
     unsafe {
         asm!("csrw satp, {}", in(reg) make_satp(root_pa >> 12));
         asm!("sfence.vma zero, zero");
     }
+    printk!("VM: Hart {} switched to kernel page table", hartid);
 }
 
 pub fn vm_switch_off() {

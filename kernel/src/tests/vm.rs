@@ -15,14 +15,11 @@ pub fn run(hartid: usize) {
         VM_BARRIER.init(dtb::hart_count());
         printk!("{}[TEST]{} VM test start ({} harts)", ANSI_YELLOW, ANSI_RESET, VM_BARRIER.total());
     }
-    while VM_BARRIER.total() == 0 {}
-    // 第一阶段：只在 hart0 运行功能测试，其它 hart 等待开始栅栏
     VM_BARRIER.wait_start();
     if hartid == 0 {
         vm_func_test();
+        vm_mapping_test();
     }
-    // 第二阶段：所有 hart 做映射测试
-    vm_mapping_test(hartid);
     if VM_BARRIER.finish_and_last() {
         printk!("{}[PASS]{} VM test ({} harts)", ANSI_GREEN, ANSI_RESET, VM_BARRIER.total());
     }
@@ -74,10 +71,8 @@ fn vm_func_test() {
     printk!("{}vm_func_test passed!{}", ANSI_GREEN, ANSI_RESET);
 }
 
-fn vm_mapping_test(hartid: usize) {
-    if hartid == 0 {
-        printk!("--- vm_mapping_test ---");
-    }
+fn vm_mapping_test() {
+    printk!("--- vm_mapping_test ---");
 
     // 1. 初始化测试页表
     // pmem_alloc 已经将内存清零
@@ -94,13 +89,9 @@ fn vm_mapping_test(hartid: usize) {
     assert!(pa_2 != 0, "vm_mapping_test: pa_2 alloc failed");
 
     // 3. 建立映射
-    if hartid == 0 {
-        printk!("Mapping VA {:#x} -> PA {:#x} (R W)", va_1, pa_1);
-    }
+    printk!("Mapping VA {:#x} -> PA {:#x} (R W)", va_1, pa_1);
     vm_mappages(table, va_1, PGSIZE, pa_1, PTE_R | PTE_W);
-    if hartid == 0 {
-        printk!("Mapping VA {:#x} -> PA {:#x} (R W X)", va_2, pa_2);
-    }
+    printk!("Mapping VA {:#x} -> PA {:#x} (R W X)", va_2, pa_2);
     vm_mappages(table, va_2, PGSIZE, pa_2, PTE_R | PTE_W | PTE_X);
 
     // 4. 验证映射结果
@@ -129,13 +120,9 @@ fn vm_mapping_test(hartid: usize) {
 
     // 5. 解除映射
     // vm_unmappages 会释放 pa_1 和 pa_2
-    if hartid == 0 {
-        printk!("Unmapping VA {:#x}", va_1);
-    }
+    printk!("Unmapping VA {:#x}", va_1);
     vm_unmappages(table, va_1, PGSIZE, true);
-    if hartid == 0 {
-        printk!("Unmapping VA {:#x}", va_2);
-    }
+    printk!("Unmapping VA {:#x}", va_2);
     vm_unmappages(table, va_2, PGSIZE, true);
 
     // 6. 验证解除映射结果
@@ -152,7 +139,5 @@ fn vm_mapping_test(hartid: usize) {
     // 7. 清理页表
     pmem_free(pgtbl as usize, true);
 
-    if hartid == 0 {
-        printk!("{}vm_mapping_test passed!{}", ANSI_GREEN, ANSI_RESET);
-    }
+    printk!("{}vm_mapping_test passed!{}", ANSI_GREEN, ANSI_RESET);
 }
