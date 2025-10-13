@@ -18,7 +18,35 @@
                    *     *        *
 ```
 A simple microkernel written in Rust for RISC-V architecture as a learning project.
-## Usage
+## Roadmap
+- [-] Base Kernel
+  - [x] Bootloader
+  - [-] Kernel Initialization
+    - [x] CPU
+    - [x] Memory
+      - [x] Physical Memory Manager
+      - [x] Virtual Memory Manager
+    - [-] Devices
+      - [x] UART
+      - [-] Device Tree Support
+    - [ ] Interrupts
+      - [ ] Timer
+      - [ ] UART
+  - [x] Memory Management
+    - [x] Physical Memory
+    - [-] Virtual Memory
+  - [ ] Interrupt Handling
+    - [ ] UART Interrupt
+    - [ ] Timer Interrupt
+- [-] Devices Drivers
+  - [x] UART
+## Requirements
+- Rust (latest stable version)
+- QEMU (for RISC-V)
+- RISC-V GNU Toolchain
+- GNU Make
+- GDB (for RISC-V)
+## Getting Started
 ### Build the project
 ```sh
 cargo xtask build
