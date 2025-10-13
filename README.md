@@ -64,6 +64,8 @@ cargo xtask test
 cargo xtask gdb
 gdb-multiarch -ex "target remote :1234" -ex "set architecture riscv:rv64" -ex "file target/riscv64imac-unknown-none-elf/debug/glenda"
 ```
+## Known Issues
+- Unable to return to main loop after running vm tests on multiple cores. (Single core works fine)
 ## Contributors
 - [Mitchell Xu](https://github.com/zeyi2)
 - [Vincent Wang](https://github.com/2018wzh)
