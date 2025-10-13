@@ -19,26 +19,30 @@
 ```
 A simple microkernel written in Rust for RISC-V architecture as a learning project.
 ## Roadmap
-- [-] Base Kernel
+- [ ] Base Kernel
   - [x] Bootloader
-  - [-] Kernel Initialization
+  - [ ] Kernel Initialization
     - [x] CPU
     - [x] Memory
       - [x] Physical Memory Manager
       - [x] Virtual Memory Manager
-    - [-] Devices
+    - [ ] Devices
       - [x] UART
-      - [-] Device Tree Support
+      - [x] DTB
     - [ ] Interrupts
       - [ ] Timer
       - [ ] UART
+  - [ ] Device Tree Support
+    - [x] UART
+    - [x] CPU
+    - [x] Memory
   - [x] Memory Management
     - [x] Physical Memory
-    - [-] Virtual Memory
+    - [x] Virtual Memory
   - [ ] Interrupt Handling
     - [ ] UART Interrupt
     - [ ] Timer Interrupt
-- [-] Devices Drivers
+- [ ] Devices Drivers
   - [x] UART
 ## Requirements
 - Rust (latest stable version)
