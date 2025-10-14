@@ -57,5 +57,5 @@ pub const fn pte_to_pa(pte: Pte) -> PhysAddr {
 
 #[inline(always)]
 pub const fn pa_to_pte(pa: PhysAddr, flags: PteFlags) -> Pte {
-    (pa >> 12) << 10 | (flags & 0x3FF)
+    (((pa >> 12) & 0xFFFFFFFFFFF) << 10) | (flags & 0x3FF)
 }
