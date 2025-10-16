@@ -14,9 +14,9 @@ pub fn run_tests(hartid: usize) {
     super::printk::run(hartid);
     vm_switch_off(); // 关闭 VM，确保测试在非分页环境下运行
     super::pmem::run(hartid);
+    init_kernel_vm(hartid);
     vm_switch_to_kernel(hartid);
     super::vm::run(hartid);
-
     // 最终同步：所有测试结束后再统一进入 main loop
     // 初始化（任意先到可执行）；如果已经 init 则忽略
     FINAL_BARRIER.ensure_inited(crate::dtb::hart_count());

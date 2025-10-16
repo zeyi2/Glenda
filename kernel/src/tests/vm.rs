@@ -1,3 +1,4 @@
+use crate::trapdiag;
 use super::barrier::MultiCoreTestBarrier;
 use crate::dtb;
 use crate::mem::addr::PhysAddr;
@@ -80,7 +81,6 @@ fn vm_mapping_test() {
     let pgtbl = pmem_alloc(true) as *mut PageTable;
     assert!(!pgtbl.is_null(), "vm_mapping_test: pgtbl alloc failed");
     let table = unsafe { &*pgtbl };
-
     // 2. 准备测试条件
     let va_1: usize = 0x100000;
     let va_2: usize = 0x8000;
@@ -92,7 +92,8 @@ fn vm_mapping_test() {
     // 3. 建立映射
     printk!("Mapping VA {:#x} -> PA {:#x} (R W)", va_1, pa_1);
     vm_mappages(table, va_1, PGSIZE, pa_1, PTE_R | PTE_W);
-    printk!("Mapping VA {:#x} -> PA {:#x} (R W X)", va_2, pa_2);
+    //trapdiag::dump_last_trap();
+    //printk!("Mapping VA {:#x} -> PA {:#x} (R W X)", va_2, pa_2);
     vm_mappages(table, va_2, PGSIZE, pa_2, PTE_R | PTE_W | PTE_X);
 
     // 4. 验证映射结果

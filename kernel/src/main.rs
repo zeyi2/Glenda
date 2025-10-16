@@ -9,6 +9,8 @@ mod printk;
 mod trap;
 #[cfg(feature = "tests")]
 mod tests;
+pub mod uart_emerg;
+pub mod trapdiag;
 
 use core::panic::PanicInfo;
 use init::init;

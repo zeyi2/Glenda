@@ -3,6 +3,7 @@
 use core::arch::asm;
 use core::cmp::max;
 use core::panic;
+use core::ptr::read_volatile;
 
 use super::addr::{PhysAddr, VirtAddr, align_down, align_up, vpn};
 use super::pmem::{kernel_region_info, pmem_alloc, pmem_free, user_region_info};
@@ -12,6 +13,7 @@ use super::{PGNUM, PGSIZE, VA_MAX};
 use crate::dtb;
 use crate::printk;
 use spin::Once;
+use crate::uart_emerg::{emerg_puts, emerg_hex};
 
 const SATP_SV39: usize = 8 << 60;
 
@@ -178,52 +180,99 @@ pub fn vm_unmappages(table: &PageTable, va: VirtAddr, size: usize, free: bool) {
 
 #[cfg(feature = "tests")]
 pub fn vm_print(table: &PageTable) {
-    // 打印三级页表，仅支持 4KB 页；显示每级基准 VA
-    let pgtbl_2 = table; // level-2 (root)
-    printk!("level-2 pgtbl: pa = {:p}", pgtbl_2);
+    use core::ptr::read_volatile;
+    use crate::uart_emerg::{emerg_puts, emerg_hex};
+
+    #[inline(always)]
+    fn pa_in_any_region(pa: usize) -> bool {
+        let k = super::pmem::kernel_region_info();
+        let u = super::pmem::user_region_info();
+        (pa >= k.begin && pa < k.end) || (pa >= u.begin && pa < u.end)
+    }
+
+    #[inline(always)]
+    fn sv39_canon(va: usize) -> usize {
+        // sign-extend bit 38
+        let sign = (va >> 38) & 1;
+        if sign == 1 { va | (!0usize << 39) } else { va & ((1usize << 39) - 1) }
+    }
+
+    emerg_puts("[vm_print] ENTER\n");
+
+    let pgtbl_2 = table as *const PageTable as usize;
+    emerg_puts("L2 PT @ "); emerg_hex(pgtbl_2); emerg_puts("\n");
+
     for i in 0..PGNUM {
-        let pte2 = pgtbl_2.entries[i];
-        if !pte_is_valid(pte2) {
-            continue;
-        }
+        let pte2 = unsafe { (*(pgtbl_2 as *const PageTable)).entries[i] };
+        if !pte_is_valid(pte2) { continue; }
         if !pte_is_table(pte2) {
-            panic!("vm_print: pte check fail (1) L2 idx {} PTE {:#x}", i, pte2);
+            emerg_puts("ASSERT: L2 entry is not table, i="); emerg_hex(i); emerg_puts("\n");
+            return;
         }
-        let pgtbl_1 = pte_to_pa(pte2) as *const PageTable;
-        let base_va_l2 = (i << 30) as *const u8;
-        printk!(".. level-1 pgtbl {:3} base_va = {:p} pa = {:p}", i, base_va_l2, pgtbl_1);
+
+        let pgtbl_1_pa = pte_to_pa(pte2);
+        if (pgtbl_1_pa & (PGSIZE - 1)) != 0 {
+            emerg_puts("ASSERT: L1 pa not page-aligned: "); emerg_hex(pgtbl_1_pa); emerg_puts("\n");
+            return;
+        }
+        if !pa_in_any_region(pgtbl_1_pa) {
+            emerg_puts("ASSERT: L1 pa out of region: "); emerg_hex(pgtbl_1_pa); emerg_puts("\n");
+            return;
+        }
+        unsafe { read_volatile(pgtbl_1_pa as *const u64); }
+
+        emerg_puts(".. L1["); emerg_hex(i); emerg_puts("] pa="); emerg_hex(pgtbl_1_pa); emerg_puts("\n");
+
+        let pgtbl_1 = pgtbl_1_pa as *const PageTable;
         for j in 0..PGNUM {
             let pte1 = unsafe { (*pgtbl_1).entries[j] };
-            if !pte_is_valid(pte1) {
-                continue;
-            }
+            if !pte_is_valid(pte1) { continue; }
             if !pte_is_table(pte1) {
-                panic!("vm_print: pte check fail (2) L1 idx {} PTE {:#x}", j, pte1);
+                emerg_puts("ASSERT: L1 entry is not table, j="); emerg_hex(j); emerg_puts("\n");
+                return;
             }
-            let pgtbl_0 = pte_to_pa(pte1) as *const PageTable;
-            let base_va_l1 = ((i << 30) | (j << 21)) as *const u8;
-            printk!(".. .. level-0 pgtbl {:3} base_va = {:p} pa = {:p}", j, base_va_l1, pgtbl_0);
+
+            let pgtbl_0_pa = pte_to_pa(pte1);
+            if (pgtbl_0_pa & (PGSIZE - 1)) != 0 {
+                emerg_puts("ASSERT: L0 pa not page-aligned: "); emerg_hex(pgtbl_0_pa); emerg_puts("\n");
+                return;
+            }
+            if !pa_in_any_region(pgtbl_0_pa) {
+                emerg_puts("ASSERT: L0 pa out of region: "); emerg_hex(pgtbl_0_pa); emerg_puts("\n");
+                return;
+            }
+            unsafe { read_volatile(pgtbl_0_pa as *const u64); }
+
+            emerg_puts(".. .. L0["); emerg_hex(j); emerg_puts("] pa="); emerg_hex(pgtbl_0_pa); emerg_puts("\n");
+
+            let pgtbl_0 = pgtbl_0_pa as *const PageTable;
             for k in 0..PGNUM {
                 let pte0 = unsafe { (*pgtbl_0).entries[k] };
-                if !pte_is_valid(pte0) {
-                    continue;
-                }
+                if !pte_is_valid(pte0) { continue; }
                 if !pte_is_leaf(pte0) {
-                    panic!("vm_print: pte check fail (3) L0 idx {} PTE {:#x}", k, pte0);
+                    emerg_puts("ASSERT: L0 entry not leaf, k="); emerg_hex(k); emerg_puts("\n");
+                    return;
                 }
+
                 let pa = pte_to_pa(pte0);
-                let va = ((i << 30) | (j << 21) | (k << 12)) as *const u8;
+                let va_raw = ((i << 30) | (j << 21) | (k << 12)) as usize;
+                let va = sv39_canon(va_raw);
                 let flags = pte_get_flags(pte0);
-                printk!(
-                    ".. .. .. page {:3} VA {:p} -> PA {:p} flags = {:#x}",
-                    k,
-                    va,
-                    pa as *const u8,
-                    flags
-                );
+
+                emerg_puts(".. .. .. page ");
+                emerg_hex(k);
+                emerg_puts(" VA=");
+                emerg_hex(va);
+                emerg_puts(" -> PA=");
+                emerg_hex(pa);
+                emerg_puts(" flags=");
+                emerg_hex(flags);
+                emerg_puts("\n");
             }
         }
     }
+
+    emerg_puts("[vm_print] DONE\n");
 }
 
 #[inline(always)]
