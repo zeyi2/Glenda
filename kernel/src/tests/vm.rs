@@ -6,8 +6,7 @@ use crate::mem::pmem::{pmem_alloc, pmem_free};
 use crate::mem::pte::{PTE_R, PTE_W, PTE_X, pte_get_flags, pte_is_valid, pte_to_pa};
 use crate::mem::vm::{PageTable, vm_getpte, vm_mappages, vm_print, vm_unmappages};
 use crate::mem::{PGSIZE, VA_MAX};
-use crate::printk;
-use crate::printk::{ANSI_GREEN, ANSI_RESET, ANSI_YELLOW};
+use crate::uart_emerg::{emerg_puts, emerg_hex};
 
 static VM_BARRIER: MultiCoreTestBarrier = MultiCoreTestBarrier::new();
 
@@ -15,7 +14,9 @@ pub fn run(hartid: usize) {
     VM_BARRIER.ensure_inited(dtb::hart_count());
     if hartid == 0 {
         VM_BARRIER.init(dtb::hart_count());
-        printk!("{}[TEST]{} VM test start ({} harts)", ANSI_YELLOW, ANSI_RESET, VM_BARRIER.total());
+        emerg_puts("[TEST] VM test start (");
+        emerg_hex(VM_BARRIER.total());
+        emerg_puts(" harts)\n");
     }
     VM_BARRIER.wait_start();
     if hartid == 0 {
@@ -23,7 +24,9 @@ pub fn run(hartid: usize) {
         vm_mapping_test();
     }
     if VM_BARRIER.finish_and_last() {
-        printk!("{}[PASS]{} VM test ({} harts)", ANSI_GREEN, ANSI_RESET, VM_BARRIER.total());
+        emerg_puts("[PASS] VM test (");
+        emerg_hex(VM_BARRIER.total());
+        emerg_puts(" harts)\n");
     }
 }
 
@@ -41,27 +44,27 @@ fn vm_func_test() {
         mem[i] = page as usize;
     }
 
-    printk!("--- vm_func_test: test 1 ---");
+    emerg_puts("--- vm_func_test: test 1 ---\n");
     let table = unsafe { &*test_pgtbl };
-    printk!("Mapped VA 0x0 -> PA {:#x} (R)", mem[0]);
+    emerg_puts("Mapped VA "); emerg_hex(0); emerg_puts(" -> PA "); emerg_hex(mem[0]); emerg_puts(" (R)\n");
     vm_mappages(table, 0, PGSIZE, mem[0], PTE_R);
-    printk!("Mapped VA 0x{:#x} -> PA {:#x} (R W)", PGSIZE * 10, mem[1]);
+    emerg_puts("Mapped VA "); emerg_hex(PGSIZE * 10); emerg_puts(" -> PA "); emerg_hex(mem[1]); emerg_puts(" (R W)\n");
     vm_mappages(table, PGSIZE * 10, PGSIZE, mem[1], PTE_R | PTE_W);
-    printk!("Mapped VA 0x{:#x} -> PA {:#x} (R X)", PGSIZE * 512, mem[2]);
+    emerg_puts("Mapped VA "); emerg_hex(PGSIZE * 512); emerg_puts(" -> PA "); emerg_hex(mem[2]); emerg_puts(" (R X)\n");
     vm_mappages(table, PGSIZE * 512, PGSIZE, mem[2], PTE_R | PTE_X);
-    printk!("Mapped VA 0x{:#x} -> PA {:#x} (R X)", PGSIZE * 512 * 512, mem[3]);
+    emerg_puts("Mapped VA "); emerg_hex(PGSIZE * 512 * 512); emerg_puts(" -> PA "); emerg_hex(mem[3]); emerg_puts(" (R X)\n");
     vm_mappages(table, PGSIZE * 512 * 512, PGSIZE, mem[3], PTE_R | PTE_X);
-    printk!("Mapped VA 0x{:#x} -> PA {:#x} (W)", VA_MAX - PGSIZE, mem[4]);
+    emerg_puts("Mapped VA "); emerg_hex(VA_MAX - PGSIZE); emerg_puts(" -> PA "); emerg_hex(mem[4]); emerg_puts(" (W)\n");
     vm_mappages(table, VA_MAX - PGSIZE, PGSIZE, mem[4], PTE_W);
-    printk!("Page table after mapping:");
+    emerg_puts("Page table after mapping:\n");
     vm_print(table);
 
-    printk!("--- vm_func_test: test 2 ---");
-    printk!("Mapped VA 0x0 -> PA {:#x} (W)", mem[0]);
+    emerg_puts("--- vm_func_test: test 2 ---\n");
+    emerg_puts("Mapped VA "); emerg_hex(0); emerg_puts(" -> PA "); emerg_hex(mem[0]); emerg_puts(" (W)\n");
     vm_mappages(table, 0, PGSIZE, mem[0], PTE_W);
-    printk!("Unmapped VA 0x{:#x}", PGSIZE * 10);
+    emerg_puts("Unmapped VA "); emerg_hex(PGSIZE * 10); emerg_puts("\n");
     vm_unmappages(table, PGSIZE * 10, PGSIZE, true);
-    printk!("Unmapped VA 0x{:#x}", PGSIZE * 512 * 512);
+    emerg_puts("Unmapped VA "); emerg_hex(PGSIZE * 512 * 512); emerg_puts("\n");
     vm_unmappages(table, PGSIZE * 512, PGSIZE, true);
     vm_print(table);
 
@@ -70,11 +73,11 @@ fn vm_func_test() {
         pmem_free(page, false);
     }
     pmem_free(test_pgtbl as usize, true);
-    printk!("{}vm_func_test passed!{}", ANSI_GREEN, ANSI_RESET);
+    emerg_puts("vm_func_test passed!\n");
 }
 
 fn vm_mapping_test() {
-    printk!("--- vm_mapping_test ---");
+    emerg_puts("--- vm_mapping_test ---\n");
 
     // 1. 初始化测试页表
     // pmem_alloc 已经将内存清零
@@ -90,10 +93,10 @@ fn vm_mapping_test() {
     assert!(pa_2 != 0, "vm_mapping_test: pa_2 alloc failed");
 
     // 3. 建立映射
-    printk!("Mapping VA {:#x} -> PA {:#x} (R W)", va_1, pa_1);
+    emerg_puts("Mapping VA "); emerg_hex(va_1); emerg_puts(" -> PA "); emerg_hex(pa_1); emerg_puts(" (R W)\n");
     vm_mappages(table, va_1, PGSIZE, pa_1, PTE_R | PTE_W);
     //trapdiag::dump_last_trap();
-    //printk!("Mapping VA {:#x} -> PA {:#x} (R W X)", va_2, pa_2);
+    // emerg_puts("Mapping VA "); emerg_hex(va_2); emerg_puts(" -> PA "); emerg_hex(pa_2); emerg_puts(" (R W X)\n");
     vm_mappages(table, va_2, PGSIZE, pa_2, PTE_R | PTE_W | PTE_X);
 
     // 4. 验证映射结果
@@ -122,9 +125,9 @@ fn vm_mapping_test() {
 
     // 5. 解除映射
     // vm_unmappages 会释放 pa_1 和 pa_2
-    printk!("Unmapping VA {:#x}", va_1);
+    emerg_puts("Unmapping VA "); emerg_hex(va_1); emerg_puts("\n");
     vm_unmappages(table, va_1, PGSIZE, true);
-    printk!("Unmapping VA {:#x}", va_2);
+    emerg_puts("Unmapping VA "); emerg_hex(va_2); emerg_puts("\n");
     vm_unmappages(table, va_2, PGSIZE, true);
 
     // 6. 验证解除映射结果
@@ -141,5 +144,5 @@ fn vm_mapping_test() {
     // 7. 清理页表
     pmem_free(pgtbl as usize, true);
 
-    printk!("{}vm_mapping_test passed!{}", ANSI_GREEN, ANSI_RESET);
+    emerg_puts("vm_mapping_test passed!\n");
 }
